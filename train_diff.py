@@ -14,7 +14,8 @@ from utils.utils import (
     cleanup_old_checkpoints,
 )
 from guided_diffusion.script_util import create_model
-from utils.CT_dataset import LoDoPaB
+from torchvision.datasets import CIFAR10
+from torch.utils.data import DataLoader
 
 
 def train(args):
@@ -40,11 +41,25 @@ def train(args):
 
     device = args.device
 
-    train_loader, _, _ = LoDoPaB(
+    # CIFAR-10 dataset with transformations
+    transform = transforms.Compose([
+        transforms.Resize((args.image_size, args.image_size)),
+        transforms.ToTensor(),
+    ])
+    
+    train_dataset = CIFAR10(
+        root='./data',
+        train=True,
+        download=True,
+        transform=transform
+    )
+    
+    train_loader = DataLoader(
+        train_dataset,
         batch_size=args.batch_size,
-        workers=0,
-        im_size=args.image_size,
-    ).get_loaders()
+        shuffle=True,
+        num_workers=0,
+    )
 
     model = create_model(image_size=args.image_size, num_channels=64, num_res_blocks=3, input_channels=args.channels).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=args.lr)
@@ -133,7 +148,7 @@ def launch():
 
     parser = argparse.ArgumentParser()
     parser.add_argument("--epochs", type=int, default=1000)
-    parser.add_argument("--channels", type=int, default=1)
+    parser.add_argument("--channels", type=int, default=3)
     parser.add_argument("--batch_size", type=int, default=4)
     parser.add_argument("--save_path", type=str, default="weights/")
     parser.add_argument("--save_img", type=int, default=100, help="Save images every N epochs")
