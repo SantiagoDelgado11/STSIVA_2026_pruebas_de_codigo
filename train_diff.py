@@ -1,5 +1,5 @@
 from utils.utils import save_images, save_metrics, AverageMeter
-import wandb
+#import wandb
 from torchvision import transforms
 import os
 import torch
@@ -134,13 +134,13 @@ def train(args):
             sampled_images = diffusion.sample(model, n=1)
             save_images(sampled_images, f"{images_path}/epoch_{epoch}_sampled.png")
 
-        wandb.log(
-            {
-                "epoch": epoch,
-                "sampled_images": (wandb.Image(sampled_images) if (epoch + 1) % args.save_img == 0 else None),
-                "train_loss": train_loss.avg,
-            }
-        )
+        #wandb.log(
+        #    {
+        #        "epoch": epoch,
+        #        "sampled_images": (wandb.Image(sampled_images) if (epoch + 1) % args.save_img == 0 else None),
+        #        "train_loss": train_loss.avg,
+        #    }
+        #)
 
 
 def launch():
