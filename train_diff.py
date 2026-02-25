@@ -36,8 +36,8 @@ def train(args):
 
     logging.info(f"Starting training with parameters: {args}")
 
-    wandb.login(key="b879bf20f3c31bfcf13289e363f4d3394f7d7671")
-    wandb.init(project=args.project_name, name=path_name, config=args)
+    #wandb.login(key="b879bf20f3c31bfcf13289e363f4d3394f7d7671")
+    #wandb.init(project=args.project_name, name=path_name, config=args)
 
     device = args.device
 
