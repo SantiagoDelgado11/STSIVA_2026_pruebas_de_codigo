@@ -28,19 +28,19 @@ dps_scale = 0.0125
 
 
 # CEDiff parameters (They may differ for uniform and non-uniform sampling)
-CG_iter = 10
-CE_iter = 10
-mu = 0.5
-rho = 0.5
+#CG_iter = 10
+#CE_iter = 10
+#mu = 0.5
+#rho = 0.5
 
 # DiffPIR parameters
 CG_iters_diffpir = 100
 noise_level_img = 0.0
 
 # PnP_FISTA parameters
-fista_iter = 600
-fista_step = 0.001
-denoiser_strength = 0.00001
+#fista_iter = 600
+#fista_step = 0.001
+#denoiser_strength = 0.00001
 
 
 project_name = "NullDiff"  # f"{algo}_{sampling_method}_{180 * sampling_ratio // 1}"
