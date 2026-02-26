@@ -12,7 +12,7 @@ from guided_diffusion.script_util import create_model
 from torch.utils.data import DataLoader
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchvision import transforms
-from utils.ct_model import CTModel
+from utils.SPC_model import SPCModel
 from utils.test_set_loader import TestDataset
 from utils.utils import set_seed
 
