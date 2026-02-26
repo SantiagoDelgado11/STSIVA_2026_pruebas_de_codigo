@@ -8,7 +8,6 @@ import torch
 from algos.ddnm import DDNM
 from algos.diffpir import DiffPIR
 from algos.dps import DPS
-#from algos.Method import Method
 from guided_diffusion.script_util import create_model
 from torch.utils.data import DataLoader
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
@@ -109,22 +108,6 @@ def main(opt):
             track_metrics=opt.plot_metrics == "True",
         )
 
-    # elif opt.algo == "Method":
-    #     diff = Method(
-    #         device=device,
-    #         img_size=opt.image_size,
-    #         noise_steps=1000,
-    #         schedule_name="cosine",
-    #         channels=1,
-    #     )
-
-    #     reconstruction = diff.sample(
-    #         model=net,
-    #         y=y,
-    #         forward_pass=inverse_model.forward_pass,
-    #         transpose_pass=inverse_model.transpose_pass,
-    #         CG_iter=opt.CG_iters_diffpir,
-    #     )
 
     elif opt.algo == "DiffPIR":
         diff = DiffPIR(
@@ -147,34 +130,6 @@ def main(opt):
             transpose_pass=inverse_model.transpose_pass,
         )
 
-    # elif opt.algo == "PnP_FISTA":
-    #     from utils.DnCNN import DnCNN
-    #     from algos.pnp_fista import PnPFISTA
-
-    #     dncnn = DnCNN(channels=1, num_of_layers=20).to(device)
-    #     dncnn.load_state_dict(torch.load(opt.dncnn_weights, map_location=device))
-    #     dncnn.eval()
-
-    #     diff = PnPFISTA(
-    #         denoiser=dncnn,
-    #         max_iter=opt.fista_iter,
-    #         step_size=opt.fista_step,
-    #         denoiser_strength=opt.denoiser_strength,
-    #         device=device,
-    #     )
-
-    #     reconstruction = diff.sample(
-    #         y=y,
-    #         forward_pass=inverse_model.forward_pass,
-    #         transpose_pass=inverse_model.transpose_pass,
-    #     )
-
-    # elif opt.algo == "FBP":
-    #     reconstruction = inverse_model.pseudoinverse_cgls(y)
-    # else:
-    #     raise ValueError("Invalid algorithm specified. Choose from 'DPS', 'DDNM', 'DiffPIR', 'PnP_FISTA', 'FBP', or 'Method'.")
-
-    # ############################# METRICS ############################
 
     SSIM = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
     PSNR = PeakSignalNoiseRatio(data_range=1.0).to(device)
