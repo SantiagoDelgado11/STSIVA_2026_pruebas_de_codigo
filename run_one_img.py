@@ -8,7 +8,7 @@ import torch
 from algos.ddnm import DDNM
 from algos.diffpir import DiffPIR
 from algos.dps import DPS
-from algos.Method import Method
+#from algos.Method import Method
 from guided_diffusion.script_util import create_model
 from torch.utils.data import DataLoader
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
@@ -169,10 +169,10 @@ def main(opt):
     #         transpose_pass=inverse_model.transpose_pass,
     #     )
 
-    elif opt.algo == "FBP":
-        reconstruction = inverse_model.pseudoinverse_cgls(y)
-    else:
-        raise ValueError("Invalid algorithm specified. Choose from 'DPS', 'DDNM', 'DiffPIR', 'PnP_FISTA', 'FBP', or 'Method'.")
+    # elif opt.algo == "FBP":
+    #     reconstruction = inverse_model.pseudoinverse_cgls(y)
+    # else:
+    #     raise ValueError("Invalid algorithm specified. Choose from 'DPS', 'DDNM', 'DiffPIR', 'PnP_FISTA', 'FBP', or 'Method'.")
 
     # ############################# METRICS ############################
 
@@ -307,7 +307,7 @@ if __name__ == "__main__":
     p.add_argument(
         "--algo",
         type=str,
-        default="Method",
+        default="DPS",
         choices=["DPS", "DDNM", "DiffPIR"],
     )
 
