@@ -167,12 +167,11 @@ def main(opt):
     ax[2].axis("off")
     ax[2].set_title(f"{opt.algo} Predicted\nSSIM: {ssim_pred:.4f}, PSNR: {psnr_pred:.2f}")
 
-    meas_vis = y[0, 0].cpu().detach().numpy().T
-    meas_cmap = "jet"
-    meas_title = f"Sinogram + {opt.sampling_method} Sampling | {opt.sampling_ratio:.2f} ratio"
+    meas_vis = y[0, 0].cpu().detach().numpy().flatten()
+    meas_title = f"Hadamard Measuremnts\n(M={len(meas_vis)})"
 
-    ax[3].imshow(meas_vis, cmap=meas_cmap)
-    ax[3].axis("off")
+    ax[3].plot(meas_vis, color="blue", linewidth=0.5)
+    ax[3].set_xlim(0, len(meas_vis))
     ax[3].set_title(meas_title)
 
     ax[4].imshow(error_map[0, 0].cpu().detach().numpy(), cmap="hot")
