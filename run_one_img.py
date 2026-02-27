@@ -62,12 +62,12 @@ def main(opt):
 
     # ####################### FORWARD AND TRANSPOSE PASS #######################
 
-    inverse_model = CTModel(
+    inverse_model = SPCModel(
         im_size=opt.image_size,
-        num_angles=opt.num_angles,
-        sampling_ratio=opt.sampling_ratio,
-        sampling_method=opt.sampling_method,
+        compression_ratio=opt.sampling_ratio, # SPCModel usa compression_ratio en lugar de sampling_ratio
+        sampling_method=opt.sampling_method,  # Asegúrate de que los argumentos coincidan con los de SPC
     ).to(device)
+    
     y = inverse_model.forward_pass(GT)
     x_estimate = inverse_model.transpose_pass(y)
 
@@ -103,7 +103,7 @@ def main(opt):
             model=net,
             y=y,
             forward_pass=inverse_model.forward_pass,
-            pseudo_inverse=inverse_model.pseudoinverse_cgls,
+            pseudo_inverse=inverse_model.transpose_pass,
             ground_truth=GT,
             track_metrics=opt.plot_metrics == "True",
         )
@@ -194,7 +194,7 @@ def main(opt):
     else:
         plt.close()
 
-    plt.imshow(meas_vis, cmap=meas_cmap)
+    plt.imshow(meas_vis, cmap='viridis')
     plt.axis("off")
     meas_title_full = f"Sinogram + {opt.sampling_method} Sampling | {opt.sampling_ratio:.2f} ratio | algo: {opt.algo}"
     plt.title(meas_title_full)
