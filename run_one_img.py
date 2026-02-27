@@ -178,11 +178,11 @@ def main(opt):
     ax[4].axis("off")
     ax[4].set_title(f"Error Map ({opt.algo} - GT)")
     plt.colorbar(ax[4].images[0], ax=ax[4])
-    plt.suptitle(f"CT Reconstruction with {opt.algo} Algorithm", fontsize=16)
+    plt.suptitle(f"SPC Reconstruction with {opt.algo} Algorithm", fontsize=16)
     plt.tight_layout()
 
     if opt.save_image == "True":
-        save_dir = f"results/CT/{opt.algo}/{opt.sampling_method}/{int(opt.sampling_ratio * 180)}/{opt.idx}"
+        save_dir = f"results/SPC/{opt.algo}/{opt.sampling_method}/{opt.sampling_ratio:.2f}/{opt.idx}"
         os.makedirs(save_dir, exist_ok=True)
         plt.savefig(
             f"{save_dir}/reconstruction_idx_{opt.idx}_{psnr_pred:.2f}_{ssim_pred:.3f}.pdf",
@@ -193,17 +193,6 @@ def main(opt):
         plt.show()
     else:
         plt.close()
-
-    plt.imshow(meas_vis, cmap='viridis')
-    plt.axis("off")
-    meas_title_full = f"Sinogram + {opt.sampling_method} Sampling | {opt.sampling_ratio:.2f} ratio | algo: {opt.algo}"
-    plt.title(meas_title_full)
-
-    if opt.save_image == "True":
-        plt.savefig(
-            f"{save_dir}/measurement_idx_{opt.idx}_{psnr_pred:.2f}_{ssim_pred:.3f}.pdf",
-            bbox_inches="tight",
-        )
 
     if opt.use_wandb == "True":
         wandb.login(key=opt.wandb_id)
