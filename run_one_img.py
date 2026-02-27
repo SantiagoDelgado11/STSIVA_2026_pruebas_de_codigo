@@ -235,7 +235,6 @@ if __name__ == "__main__":
     p.add_argument("--batch_size", type=int, default=150, help="Batch size for sampling (default: 1)")
     p.add_argument("--image_size", type=int, default=256)
     p.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
-    p.add_argument("--num_angles", type=int, default=180)
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use for training (default: 0)")
     p.add_argument("--save_image", type=str, default="False", choices=["True", "False"])
@@ -254,8 +253,8 @@ if __name__ == "__main__":
     p.add_argument(
         "--sampling_method",
         type=str,
-        default="uniform",
-        choices=["uniform", "non_uniform", "limited"],
+        default="random",
+        choices=["random", "low_frequency", "sequency"],
     )
 
     p.add_argument(
