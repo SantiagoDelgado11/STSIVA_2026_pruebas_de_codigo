@@ -64,8 +64,9 @@ def main(opt):
 
     inverse_model = SPCModel(
         im_size=opt.image_size,
-        compression_ratio=opt.sampling_ratio, # SPCModel usa compression_ratio en lugar de sampling_ratio
-        sampling_method=opt.sampling_method,  # Asegúrate de que los argumentos coincidan con los de SPC
+        compression_ratio=opt.sampling_ratio, 
+        sampling_method=opt.sampling_method,  
+        device=device # <--- Agrega esta línea
     ).to(device)
     
     y = inverse_model.forward_pass(GT)

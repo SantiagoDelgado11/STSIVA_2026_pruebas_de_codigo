@@ -2,8 +2,9 @@ import torch
 import torch.nn as nn
 from typing import Optional
 
-# Asumimos que tienes un módulo que implementa la Transformada Rápida de Hadamard
+# Importamos las operaciones y el archivo de utilidades numpy
 from . import hadamard_ops 
+from . import hadamard # Tu archivo de generación de índices 2D
 
 class SPCModel(nn.Module):
     """SPC forward and adjoint operator using Hadamard patterns."""
@@ -11,90 +12,87 @@ class SPCModel(nn.Module):
     def __init__(
         self,
         im_size: int,
-        compression_ratio: float, # Reemplaza sampling_ratio
-        sampling_method: str = "random", # 'random' o 'low_frequency'
+        compression_ratio: float,
+        sampling_method: str = "random",
         mask: Optional[torch.Tensor] = None,
         apply_mask: bool = True,
+        device: str = "cuda" # Recibimos el device dinámicamente
     ) -> None:
         super().__init__()
 
         self.im_size = im_size
-        self.num_pixels = im_size * im_size # N total de pixeles
+        self.num_pixels = im_size * im_size 
         self.compression_ratio = compression_ratio
-        
-        # El número total de patrones en Hadamard completo es igual al número de píxeles
         self.num_patterns = self.num_pixels 
+        self.apply_mask = apply_mask
+        self.device = device
 
-        # Construir la máscara de patrones (M)
+        n_select = max(1, int(round(self.num_patterns * compression_ratio)))
+
+        # 1. Configurar el orden de la FWHT basado en el método de muestreo
+        fwht_order = "sequency" if sampling_method == "sequency" else "natural"
+        self.hadamard_op = hadamard_ops.FWHT(device=self.device, order=fwht_order)
+
+        # 2. Construir la máscara de patrones (M)
         if mask is not None:
             if mask.numel() != self.num_patterns:
                 raise ValueError("mask must have length equal to num_pixels")
-            self.mask = mask.float().to(device="cuda")
-            self.apply_mask = apply_mask
+            self.mask = mask.float().to(self.device).flatten()
+            
         else:
-            n_select = max(1, int(round(self.num_patterns * compression_ratio)))
-            mask_full = torch.zeros(self.num_patterns, dtype=torch.float32)
-            
-            if sampling_method in ["random"]:
-                # Selecciona patrones aleatorios (muy común en compressive sensing)
+            if sampling_method == "random":
+                mask_full = torch.zeros(self.num_patterns, dtype=torch.float32)
                 indices = torch.randperm(self.num_patterns)[:n_select]
-            elif sampling_method in ["low_frequency", "sequency"]:
-                # Selecciona los primeros N patrones (los de menor frecuencia/sequency)
+                mask_full[indices] = 1.0
+                self.mask = mask_full.to(self.device)
+                
+            elif sampling_method == "sequency":
+                # Como FWHT está en modo sequency 1D, tomar los primeros N sí 
+                # representa bajas sequencies 1D (aunque en imágenes 2D el zig-zag es mejor)
+                mask_full = torch.zeros(self.num_patterns, dtype=torch.float32)
                 indices = torch.arange(n_select)
+                mask_full[indices] = 1.0
+                self.mask = mask_full.to(self.device)
+                
+            elif sampling_method == "low_frequency":
+                # Aquí usamos tu hadamard.py para el verdadero Zig-Zag 2D!
+                # hadamard_ops opera en natural, por lo que usamos el index_matrix
+                # que mapea el espacio 2D sobre el orden natural.
+                index_matrix = hadamard.get_index_matrix(im_size)
+                mask_np = hadamard.get_mask(index_matrix, im_size, m=n_select)
+                
+                # Convertimos de NumPy (CPU) a PyTorch (GPU respectiva) de forma segura
+                self.mask = torch.tensor(mask_np, dtype=torch.float32, device=self.device).flatten()
+                
             else:
-                raise ValueError("sampling_method must be 'random' or 'low_frequency'")
-            
-            mask_full[indices] = 1.0
-            self.mask = mask_full.to(device="cuda")
-            self.apply_mask = apply_mask
-
-        # Operadores Forward (H) y Adjoint (H^T) de Hadamard
-        # En la práctica, FWHT (Fast Walsh-Hadamard Transform) hace ambas cosas
-        self.hadamard_op = hadamard_ops.FWHT(device="cuda")
+                raise ValueError("sampling_method must be 'random', 'low_frequency', or 'sequency'")
 
     # ------------------------------------------------------------------
     def _mask_patterns(self, measurements: torch.Tensor) -> torch.Tensor:
         """Aplica la máscara a las mediciones de Hadamard (Operador diagonal M)."""
         if self.apply_mask:
-            # Multiplica las mediciones por 0 en los patrones no muestreados
-            return measurements * self.mask.view(1, 1, -1).to(device=measurements.device)
+            return measurements * self.mask.view(1, 1, -1)
         return measurements
 
     # ------------------------------------------------------------------
     def forward_pass(self, x: torch.Tensor) -> torch.Tensor:
         """Aplica la transformada de Hadamard y la máscara de compresión."""
-        # x suele venir como (B, C, H, W). Lo aplanamos para Hadamard (B, C, N)
         B, C, H, W = x.shape
         x_flat = x.view(B, C, -1)
-        
-        # y = H x
         measurements = self.hadamard_op(x_flat) 
-        
-        # y_masked = M H x
         return self._mask_patterns(measurements)
 
     # ------------------------------------------------------------------
     def transpose_pass(self, y: torch.Tensor) -> torch.Tensor:
-        """
-        Aplica el operador adjunto exacto (H^T M y).
-        Como Hadamard es ortogonal, aplicar H nuevamente actúa como la inversa/transpuesta
-        (asumiendo la normalización correcta en hadamard_op).
-        """
+        """Aplica el operador adjunto exacto (H^T M y)."""
         y_masked = self._mask_patterns(y)
         B, C, _ = y_masked.shape
-        
-        # x' = H^T (M y)
         x_reconstructed_flat = self.hadamard_op(y_masked) 
-        
-        # Devolver a formato imagen 2D
         return x_reconstructed_flat.view(B, C, self.im_size, self.im_size)
 
     # ------------------------------------------------------------------
     def direct_inverse(self, y: torch.Tensor) -> torch.Tensor:
-        """Equivalente al FBP de CT. Transpuesta directa con normalización."""
-        # Si la compresión no es del 100%, esto generará artefactos de 'aliasing',
-        # al igual que el FBP en CT con pocos ángulos.
-        return self.transpose_pass(y) # Con Hadamard, transpuesta = inversa.
+        return self.transpose_pass(y) 
 
     # ------------------------------------------------------------------
     def pseudoinverse_cgls(
@@ -104,21 +102,4 @@ class SPCModel(nn.Module):
         tol: float = 1e-6,
         x0: Optional[torch.Tensor] = None,
     ):
-        """
-        Resuelve x ≈ argmin ||M H x - M y||_2^2 vía CGLS.
-        El solver de CGLS recibe forward_pass y transpose_pass para iterar.
-        """
-        B, C = y.shape[:2]
-        x_shape = (B, C, self.im_size, self.im_size)
-
-        if x0 is None:
-            # Inicialización rápida con la inversa directa
-            x0 = self.direct_inverse(y)
-            
-        # Aquí llamarías a tu solver cgls genérico pasándole 
-        # self.forward_pass y self.transpose_pass en lugar de radon_op
-        # x, history = cgls_solver(...) 
-        # return x
         pass
-        
-        
