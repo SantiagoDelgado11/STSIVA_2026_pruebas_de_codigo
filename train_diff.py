@@ -86,7 +86,7 @@ def train(args):
         data_loop_train = tqdm(enumerate(train_loader), total=len(train_loader), colour="red")
 
         for _, train_data in data_loop_train:
-            images = train_data
+            images = train_data[0]
             images = images.to(device)
 
             images = images * 2 - 1
