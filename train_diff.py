@@ -94,14 +94,16 @@ def train(args):
         latest_checkpoint = os.path.join(checkpoint_dir, "latest.pth.tar")
         save_checkpoint(checkpoint_state, latest_checkpoint)
 
-        if (epoch + 1) % args.save_img == 0:
+        sampled_image_for_log = None
+        if (epoch) % args.save_img == 0:
             sampled_images = diffusion.sample(model, n=1)
-            save_images(sampled_images, f"{images_path}/epoch_{epoch}_sampled.png")
+            sampled_grid = save_images(sampled_images, f"{images_path}/epoch_{epoch}_sampled.png")
+            sampled_image_for_log = wandb.Image(sampled_grid)
 
         wandb.log(
             {
                 "epoch": epoch,
-                "sampled_images": (wandb.Image(sampled_images) if (epoch + 1) % args.save_img == 0 else None),
+                "sampled_images": sampled_image_for_log,
                 "train_loss": train_loss.avg,
             }
         )
