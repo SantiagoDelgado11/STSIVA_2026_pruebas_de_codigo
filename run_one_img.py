@@ -279,20 +279,6 @@ if __name__ == "__main__":
     p.add_argument("--CG_iters_diffpir", type=int, default=20)
     p.add_argument("--noise_level_img", type=float, default=0.0)
 
-    ###################### PnP-FISTA PARAMS #########################
-    p.add_argument(
-        "--dncnn_weights",
-        type=str,
-        default="weights/DNCNN/CT_SPECTRAL_NORM_lr_0.001_b_16_e_150_sd_2_im_256_ml_30/model/dcnn.pth",
-    )
-    p.add_argument("--fista_iter", type=int, default=600)
-    p.add_argument("--fista_step", type=float, default=0.001)
-    p.add_argument(
-        "--denoiser_strength",
-        type=float,
-        default=0.00001,
-        help="Scale factor for the denoiser output in PnP-FISTA",
-    )
 
     ###################### WANDB PARAMS #########################
     p.add_argument(
