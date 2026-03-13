@@ -224,7 +224,7 @@ if __name__ == "__main__":
     p.add_argument(
         "--weights",
         type=str,
-        default="weights/d_lodo_e_1000_bs_4_lr_0.0003_seed_2_img_256_schedule_cosine_gpu_1_c_1_si_100/checkpoints/latest.pth.tar",
+        default="weights/e_1000_bs_64_lr_0.0003_seed_2_img_32_schedule_cosine_gpu_0_c_3_si_100/checkpoints/latest.pth.tar",
     )
     p.add_argument("--batch_size", type=int, default=150, help="Batch size for sampling (default: 1)")
     p.add_argument("--image_size", type=int, default=256)
