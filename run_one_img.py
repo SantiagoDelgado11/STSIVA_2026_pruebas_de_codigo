@@ -131,9 +131,13 @@ def main(opt):
             transpose_pass=inverse_model.transpose_pass,
         )
 
-
+    else:
+        raise ValueError("Invalid algorithm specified. Choose from 'DPS', 'DDNM', or 'DiffPIR'.")
+    
     SSIM = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
     PSNR = PeakSignalNoiseRatio(data_range=1.0).to(device)
+
+    
 
     # Normalize the images to [0, 1] range for SSIM and PSNR calculations
     reconstruction = (reconstruction + 1) / 2  # Predicted image from the diffusion model
