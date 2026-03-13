@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # --- Funciones Base de Hadamard (antes en utils.py) ---
-
 def hadamard_matrix(n):
     if n == 1:
         return np.array([[1]])
