@@ -227,7 +227,7 @@ if __name__ == "__main__":
         default="weights/e_1000_bs_64_lr_0.0003_seed_2_img_32_schedule_cosine_gpu_0_c_3_si_100/checkpoints/latest.pth.tar",
     )
     p.add_argument("--batch_size", type=int, default=150, help="Batch size for sampling (default: 1)")
-    p.add_argument("--image_size", type=int, default=256)
+    p.add_argument("--image_size", type=int, default=32)
     p.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use for training (default: 0)")
