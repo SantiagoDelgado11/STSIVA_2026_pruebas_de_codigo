@@ -30,7 +30,7 @@ def main(opt):
     # ############################## MODEL ############################
 
     ckpt = torch.load(opt.weights, map_location=device, weights_only=True)
-    net = create_model(image_size=opt.image_size, num_channels=64, num_res_blocks=3, input_channels=1).to("cuda")
+    net = create_model(image_size=opt.image_size, num_channels=64, num_res_blocks=3, input_channels=3).to("cuda")
     net.load_state_dict(ckpt["model_state"])
     net.eval()
 
@@ -82,7 +82,7 @@ def main(opt):
             img_size=opt.image_size,
             noise_steps=1000,
             schedule_name="cosine",
-            channels=1,
+            channels=3,
             scale=opt.dps_scale,
             clip_denoised=False,
         )
@@ -99,7 +99,7 @@ def main(opt):
             img_size=opt.image_size,
             noise_steps=1000,
             schedule_name="cosine",
-            channels=1,
+            channels=3,
             eta=opt.ddnm_eta,
         )
 
@@ -119,7 +119,7 @@ def main(opt):
             img_size=opt.image_size,
             noise_steps=1000,
             schedule_name="linear",
-            channels=1,
+            channels=3,
             cg_iters=opt.CG_iters_diffpir,
             noise_level_img=opt.noise_level_img,
             iter_num=opt.iter_num,
@@ -151,7 +151,7 @@ def main(opt):
 
     # ########### ERROR MAP ####################
 
-    error_map = (reconstruction - GT).abs()
+    error_map = (reconstruction - GT).abs().mean(dim=1, keepdim=True)
 
     # Calculate SSIM and PSNR for the predicted and estimated images
 
@@ -163,15 +163,15 @@ def main(opt):
     # Plotting the results
 
     fig, ax = plt.subplots(1, 5, figsize=(25, 5))
-    ax[0].imshow(GT[0, 0].cpu().detach().numpy(), cmap="gray")
+    ax[0].imshow(GT[0].permute(1, 2, 0).cpu().detach().numpy())
     ax[0].axis("off")
     ax[0].set_title("Ground Truth")
 
-    ax[1].imshow(x_estimate[0, 0].cpu().detach().numpy(), cmap="gray")
+    ax[1].imshow(x_estimate[0].permute(1, 2, 0).cpu().detach().numpy())
     ax[1].axis("off")
     ax[1].set_title("A^T y")
 
-    ax[2].imshow(reconstruction[0, 0].cpu().detach().numpy(), cmap="gray")
+    ax[2].imshow(reconstruction[0].permute(1, 2, 0).cpu().detach().numpy())
     ax[2].axis("off")
     ax[2].set_title(f"{opt.algo} Predicted\nSSIM: {ssim_pred:.4f}, PSNR: {psnr_pred:.2f}")
 
@@ -230,7 +230,7 @@ if __name__ == "__main__":
         default="weights/e_1000_bs_64_lr_0.0003_seed_2_img_32_schedule_cosine_gpu_0_c_3_si_100/checkpoints/latest.pth.tar",
     )
     p.add_argument("--batch_size", type=int, default=150, help="Batch size for sampling (default: 1)")
-    p.add_argument("--image_size", type=int, default=256)
+    p.add_argument("--image_size", type=int, default=32)
     p.add_argument("--seed", type=int, default=0, help="Random seed for reproducibility")
     p.add_argument("--device", type=str, default="cuda")
     p.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use for training (default: 0)")
