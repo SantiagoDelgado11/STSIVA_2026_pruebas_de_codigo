@@ -14,6 +14,7 @@ from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMe
 from torchvision import transforms
 from utils.SPC_model import SPCModel
 from utils.test_set_loader import TestDataset
+from torchvision.datasets import CIFAR10
 from utils.utils import set_seed
 
 
@@ -35,11 +36,13 @@ def main(opt):
 
     # ############################## DATASET ############################
 
-    dataset = TestDataset(
-        "data/test_imgs",
+    dataset = CIFAR10(
+        root="data",
+        train=False,       # Usamos el set de prueba
+        download=True,     # Descarga el dataset automáticamente si no lo encuentra
         transform=transforms.Compose(
             [
-                transforms.ToTensor(),  # Convert numpy array to Tensor
+                transforms.ToTensor(), 
                 transforms.Resize((opt.image_size, opt.image_size)),
             ]
         ),
@@ -54,7 +57,7 @@ def main(opt):
 
     # ############################## IMAGE ############################
 
-    GT = next(iter(testloader))[opt.idx].unsqueeze(0).to(device)
+    GT = next(iter(testloader))[0][opt.idx].unsqueeze(0).to(device)
 
     # Normalize the image to [-1, 1] range
 
