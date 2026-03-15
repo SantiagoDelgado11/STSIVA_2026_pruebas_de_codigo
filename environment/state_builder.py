@@ -23,7 +23,6 @@ class StateBuilder:
     3. convergence ratio
     4. normalized iteration index
     5. measurement norm
-    6. estimated noise level
     """
 
     def __init__(self, config: StateBuilderConfig | None = None) -> None:
@@ -62,7 +61,6 @@ class StateBuilder:
         measurement_norm = torch.linalg.norm(y) / torch.sqrt(torch.tensor(float(y.numel()), device=y.device))
 
         centered_y = y - y.mean()
-        noise_estimate = torch.median(torch.abs(centered_y)) / 0.6745
 
         state = torch.stack(
             [
@@ -71,7 +69,6 @@ class StateBuilder:
                 convergence_ratio,
                 normalized_iteration,
                 measurement_norm,
-                noise_estimate,
             ]
         ).float()
         return state
