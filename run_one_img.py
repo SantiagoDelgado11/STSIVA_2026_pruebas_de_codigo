@@ -292,7 +292,7 @@ if __name__ == "__main__":
         help="Use Weights & Biases for logging",
     )
     p.add_argument("--wandb_id", type=str, default="b879bf20f3c31bfcf13289e363f4d3394f7d7671")
-    p.add_argument("--project_name", type=str, default="CAMSAP_RUNS")
+    p.add_argument("--project_name", type=str, default="STSIVA_2026")
     p.add_argument("--name", type=str, default="run_one_img")
 
     main(p.parse_args())
