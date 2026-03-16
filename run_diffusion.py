@@ -29,11 +29,33 @@ CG_iters_diffpir = 100
 noise_level_img = 0.0
 
 
-project_name = "NullDiff"  # f"{algo}_{sampling_method}_{180 * sampling_ratio // 1}"
+project_name = "STSIVA_2026_pruebas_de_codigo"
 
+name = f"lote_completo_{algo}_{sampling_method}_{int(180 * sampling_ratio)}"
 
-for idx in idx_list:
-    name = f"{idx}_{algo}_{sampling_method}_{180 * sampling_ratio // 1}"
-    os.system(
-        f"python run_one_img.py --idx {idx} --weights {weights} --batch_size {batch_size} --image_size {image_size} --seed {seed} --device {device} --gpu_id {gpu_id} --save_image {save_image} --plot {plot} --sampling_ratio {sampling_ratio} --sampling_method {sampling_method} --algo {algo} --dps_scale {dps_scale} --CG_iter {CG_iter} --CE_iter {CE_iter} --mu {mu} --rho {rho} --CG_iters_diffpir {CG_iters_diffpir} --noise_level_img {noise_level_img} --fista_iter {fista_iter} --fista_step {fista_step} --denoiser_strength {denoiser_strength} --use_wandb {use_wandb} --wandb_id {wandb_id} --project_name {project_name} --name {name}"
-    )
+print(f"Iniciando reconstrucción SPC para {batch_size} imágenes con {algo}...")
+
+comando = (
+    f"python run_one_img.py "
+    f"--weights {weights} "
+    f"--batch_size {batch_size} "
+    f"--image_size {image_size} "
+    f"--seed {seed} "
+    f"--device {device} "
+    f"--gpu_id {gpu_id} "
+    f"--save_image {save_image} "
+    f"--plot {plot} "
+    f"--sampling_ratio {sampling_ratio} "
+    f"--sampling_method {sampling_method} "
+    f"--algo {algo} "
+    f"--dps_scale {dps_scale} "
+    f"--CG_iters_diffpir {CG_iters_diffpir} "
+    f"--noise_level_img {noise_level_img} "
+    f"--use_wandb {use_wandb} "
+    f"--wandb_id {wandb_id} "
+    f"--project_name {project_name} "
+    f"--name {name}"
+)
+
+os.system(comando)
+print("¡Reconstrucción finalizada!")
