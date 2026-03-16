@@ -18,6 +18,7 @@ class EpisodeSample:
 
     x_true: torch.Tensor
     H: Any
+    # Kept for caller compatibility; ignored in this noise-free SPC environment.
     noise_std: float = 0.0
 
 
@@ -37,49 +38,57 @@ class DiffusionSolverEnv:
         self.device = torch.device(device)
 
         self.iteration = 0
-        self.previous_fidelity: float | None = None
+        self.previous_action: int = 0
         self.current_sample: EpisodeSample | None = None
         self.y: torch.Tensor | None = None
-        self.x_init: torch.Tensor | None = None
+        self.x_current: torch.Tensor | None = None
+        self.x_previous: torch.Tensor | None = None
 
     def _build_measurement(self, x_true: torch.Tensor, H: Any, noise_std: float) -> torch.Tensor:
-        y_clean = H.forward_pass(x_true)
-        if noise_std <= 0.0:
-            return y_clean
-        noise = noise_std * torch.randn_like(y_clean)
-        return y_clean + noise
+        _ = noise_std
+        return H.forward_pass(x_true)
 
     def reset(self, sample: EpisodeSample) -> torch.Tensor:
         """Reset environment and return initial state."""
         self.current_sample = sample
         self.iteration = 0
-        self.previous_fidelity = None
+        self.previous_action = 0
 
         self.y = self._build_measurement(sample.x_true, sample.H, sample.noise_std)
         if not hasattr(sample.H, "transpose_pass"):
             raise AttributeError("Operator H must implement transpose_pass for state initialization.")
 
-        self.x_init = sample.H.transpose_pass(self.y)
+        self.x_current = sample.H.transpose_pass(self.y)
+        self.x_previous = self.x_current.clone()
 
         state = self.state_builder.build(
             y=self.y,
             H=sample.H,
-            x_estimate=self.x_init,
+            x_estimate=self.x_current,
+            previous_estimate=self.x_previous,
             iteration=self.iteration,
             max_iterations=self.max_steps,
-            previous_fidelity=self.previous_fidelity,
+            previous_action=self.previous_action,
         )
-        self.previous_fidelity = float(state[0].item())
         return state
 
     def step(self, action: int) -> tuple[torch.Tensor, float, bool, dict[str, Any]]:
         """Execute selected solver and return (next_state, reward, done, info)."""
-        if self.current_sample is None or self.y is None:
+        if self.current_sample is None or self.y is None or self.x_current is None:
             raise RuntimeError("Call reset() before step().")
 
         solver = self.solver_library.get_solver(action)
         solver.set_context(x_true=self.current_sample.x_true)
-        x_hat = solver.solve(self.y, self.current_sample.H)
+        x_prev = self.x_current
+        x_hat = self.solver_library.apply_action(
+            action=action,
+            x_k=x_prev,
+            y=self.y,
+            Phi=self.current_sample.H,
+        )
+        self.x_previous = x_prev
+        self.x_current = x_hat
+        self.previous_action = action
 
         reward = psnr_reward(x_hat=x_hat, x_true=self.current_sample.x_true)
 
@@ -89,12 +98,12 @@ class DiffusionSolverEnv:
         next_state = self.state_builder.build(
             y=self.y,
             H=self.current_sample.H,
-            x_estimate=x_hat,
+            x_estimate=self.x_current,
+            previous_estimate=self.x_previous,
             iteration=self.iteration,
             max_iterations=self.max_steps,
-            previous_fidelity=self.previous_fidelity,
+            previous_action=self.previous_action,
         )
-        self.previous_fidelity = float(next_state[0].item())
 
         info = {
             "solver": solver.name,

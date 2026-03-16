@@ -18,11 +18,11 @@ class StateBuilder:
     """Build compact state vectors from inverse-problem statistics.
 
     Feature order:
-    1. data fidelity value
-    2. gradient norm
-    3. convergence ratio
-    4. normalized iteration index
-    5. measurement norm
+    1. data fidelity g(x_k) = ||Phi x_k - y||^2
+    2. gradient norm ||Phi^T(Phi x_k - y)||
+    3. convergence ratio ||x_k - x_{k-1}|| / ||x_k||
+    4. normalized iteration index k / K
+    5. previous action a_{k-1}
     """
 
     def __init__(self, config: StateBuilderConfig | None = None) -> None:
@@ -33,34 +33,35 @@ class StateBuilder:
         y: torch.Tensor,
         H,
         x_estimate: torch.Tensor,
+        previous_estimate: torch.Tensor | None,
         iteration: int,
         max_iterations: int,
-        previous_fidelity: float | None = None,
+        previous_action: int,
     ) -> torch.Tensor:
-        """Build a 6-D feature vector for a single environment step."""
+        """Build a 5-D feature vector for a single environment step."""
         eps = self.config.eps
 
         residual = H.forward_pass(x_estimate) - y
-        fidelity = torch.linalg.norm(residual) / (torch.linalg.norm(y) + eps)
+        fidelity = torch.linalg.norm(residual) ** 2
 
         if hasattr(H, "transpose_pass"):
             gradient = H.transpose_pass(residual)
-            grad_norm = torch.linalg.norm(gradient) / (torch.linalg.norm(H.transpose_pass(y)) + eps)
+            grad_norm = torch.linalg.norm(gradient)
         else:
-            grad_norm = torch.linalg.norm(residual) / (torch.linalg.norm(y) + eps)
+            grad_norm = torch.linalg.norm(residual)
 
-        if previous_fidelity is None:
-            convergence_ratio = torch.tensor(1.0, device=y.device)
+        if previous_estimate is None:
+            convergence_ratio = torch.tensor(0.0, device=y.device)
         else:
-            convergence_ratio = fidelity / (torch.tensor(previous_fidelity, device=y.device) + eps)
+            convergence_ratio = torch.linalg.norm(x_estimate - previous_estimate) / (
+                torch.linalg.norm(x_estimate) + eps
+            )
 
         normalized_iteration = torch.tensor(
             float(iteration) / float(max(max_iterations, 1)),
             device=y.device,
         )
-        measurement_norm = torch.linalg.norm(y) / torch.sqrt(torch.tensor(float(y.numel()), device=y.device))
-
-        centered_y = y - y.mean()
+        previous_action_feature = torch.tensor(float(previous_action), device=y.device)
 
         state = torch.stack(
             [
@@ -68,7 +69,7 @@ class StateBuilder:
                 grad_norm,
                 convergence_ratio,
                 normalized_iteration,
-                measurement_norm,
+                previous_action_feature,
             ]
         ).float()
         return state

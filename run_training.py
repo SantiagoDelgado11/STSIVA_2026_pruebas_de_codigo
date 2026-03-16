@@ -174,7 +174,7 @@ def main() -> None:
     )
 
     agent = ReinforceAgent(
-        state_dim=6,
+        state_dim=5,
         action_dim=solver_library.action_dim,
         value_coef=float(config.get("value_coef", 0.5)),
         entropy_coef=float(config.get("entropy_coef", 0.01)),

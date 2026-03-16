@@ -98,7 +98,7 @@ class ReinforceTrainer:
                 "episode": float(episode),
                 "reward": float(sum(trajectory.rewards)),
                 "selected_action": float(trajectory.actions[-1]),
-                "selected_solver": float(["DiffPIR", "DPS", "DDNM"].index(info["solver"])),
+                "selected_solver": float(["DDNM", "DPS", "DiffPIR"].index(info["solver"])),
                 "psnr": float(info["psnr"]),
                 **metrics,
             }
