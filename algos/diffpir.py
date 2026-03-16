@@ -16,8 +16,8 @@ def conjugate_gradient(
     apply_A: Callable[[torch.Tensor], torch.Tensor],
     b: torch.Tensor,
     x0: torch.Tensor | None = None,
-    n_iter: int = 40,
-    tol: float = 1e-6,
+    n_iter: int = 5,
+    tol: float = 1e-7,
 ) -> torch.Tensor:
     """Early‑stopping batch CG that keeps autograd enabled for ``apply_A``."""
 

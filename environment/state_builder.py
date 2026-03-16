@@ -44,21 +44,16 @@ class StateBuilder:
         residual = H.forward_pass(x_estimate) - y
         fidelity = torch.linalg.norm(residual) ** 2
 
-        if hasattr(H, "transpose_pass"):
-            gradient = H.transpose_pass(residual)
-            grad_norm = torch.linalg.norm(gradient)
-        else:
-            grad_norm = torch.linalg.norm(residual)
+        gradient = H.transpose_pass(residual)
+        grad_norm = torch.linalg.norm(gradient)
 
         if previous_estimate is None:
             convergence_ratio = torch.tensor(0.0, device=y.device)
         else:
-            convergence_ratio = torch.linalg.norm(x_estimate - previous_estimate) / (
-                torch.linalg.norm(x_estimate) + eps
-            )
+            convergence_ratio = torch.linalg.norm(x_estimate - previous_estimate) / (torch.linalg.norm(x_estimate) + eps)
 
         normalized_iteration = torch.tensor(
-            float(iteration) / float(max(max_iterations, 1)),
+            float(iteration) / float(max_iterations),
             device=y.device,
         )
         previous_action_feature = torch.tensor(float(previous_action), device=y.device)

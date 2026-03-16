@@ -9,11 +9,9 @@ from algos.ddnm import DDNM
 from algos.diffpir import DiffPIR
 from algos.dps import DPS
 from guided_diffusion.script_util import create_model
-from torch.utils.data import DataLoader
 from torchmetrics.image import PeakSignalNoiseRatio, StructuralSimilarityIndexMeasure
 from torchvision import transforms
 from utils.SPC_model import SPCModel
-from utils.test_set_loader import TestDataset
 from torchvision.datasets import CIFAR10
 from utils.utils import set_seed
 
@@ -38,21 +36,13 @@ def main(opt):
 
     dataset = CIFAR10(
         root="data",
-        train=False,       # Usamos el set de prueba
-        download=True,     # Descarga el dataset automáticamente si no lo encuentra
+        train=False,  # Usamos el set de prueba
+        download=True,  # Descarga el dataset automáticamente si no lo encuentra
         transform=transforms.Compose(
             [
-                transforms.ToTensor(), 
-                transforms.Resize((opt.image_size, opt.image_size)),
+                transforms.ToTensor(),
             ]
         ),
-    )
-    testloader = DataLoader(
-        dataset,
-        batch_size=opt.batch_size,
-        shuffle=False,
-        num_workers=0,
-        pin_memory=torch.cuda.is_available(),
     )
 
     # ############################## IMAGE ############################
@@ -65,13 +55,8 @@ def main(opt):
 
     # ####################### FORWARD AND TRANSPOSE PASS #######################
 
-    inverse_model = SPCModel(
-        im_size=opt.image_size,
-        compression_ratio=opt.sampling_ratio, 
-        sampling_method=opt.sampling_method,  
-        device=device # <--- Agrega esta línea
-    ).to(device)
-    
+    inverse_model = SPCModel(im_size=opt.image_size, compression_ratio=opt.sampling_ratio)
+
     y = inverse_model.forward_pass(GT)
     x_estimate = inverse_model.transpose_pass(y)
 
@@ -107,11 +92,10 @@ def main(opt):
             model=net,
             y=y,
             forward_pass=inverse_model.forward_pass,
-            pseudo_inverse=inverse_model.transpose_pass,
+            pseudo_inverse=inverse_model.pseudo_inverse,
             ground_truth=GT,
             track_metrics=opt.plot_metrics == "True",
         )
-
 
     elif opt.algo == "DiffPIR":
         diff = DiffPIR(
@@ -136,11 +120,9 @@ def main(opt):
 
     else:
         raise ValueError("Invalid algorithm specified. Choose from 'DPS', 'DDNM', or 'DiffPIR'.")
-    
+
     SSIM = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
     PSNR = PeakSignalNoiseRatio(data_range=1.0).to(device)
-
-    
 
     # Normalize the images to [0, 1] range for SSIM and PSNR calculations
     reconstruction = (reconstruction + 1) / 2  # Predicted image from the diffusion model
@@ -162,7 +144,7 @@ def main(opt):
 
     # Plotting the results
 
-    fig, ax = plt.subplots(1, 5, figsize=(25, 5))
+    fig, ax = plt.subplots(1, 4, figsize=(25, 5))
     ax[0].imshow(GT[0].permute(1, 2, 0).cpu().detach().numpy())
     ax[0].axis("off")
     ax[0].set_title("Ground Truth")
@@ -175,17 +157,11 @@ def main(opt):
     ax[2].axis("off")
     ax[2].set_title(f"{opt.algo} Predicted\nSSIM: {ssim_pred:.4f}, PSNR: {psnr_pred:.2f}")
 
-    meas_vis = y[0, 0].cpu().detach().numpy().flatten()
-    meas_title = f"Hadamard Measuremnts\n(M={len(meas_vis)})"
 
-    ax[3].plot(meas_vis, color="blue", linewidth=0.5)
-    ax[3].set_xlim(0, len(meas_vis))
-    ax[3].set_title(meas_title)
-
-    ax[4].imshow(error_map[0, 0].cpu().detach().numpy(), cmap="hot")
-    ax[4].axis("off")
-    ax[4].set_title(f"Error Map ({opt.algo} - GT)")
-    plt.colorbar(ax[4].images[0], ax=ax[4])
+    ax[3].imshow(error_map[0, 0].cpu().detach().numpy(), cmap="hot")
+    ax[3].axis("off")
+    ax[3].set_title(f"Error Map ({opt.algo} - GT)")
+    plt.colorbar(ax[3].images[0], ax=ax[3])
     plt.suptitle(f"SPC Reconstruction with {opt.algo} Algorithm", fontsize=16)
     plt.tight_layout()
 
@@ -246,18 +222,12 @@ if __name__ == "__main__":
 
     ################# SAMPLING / ALGO PARAMS #################
 
-    p.add_argument("--sampling_ratio", type=float, default=1 / 6)
-    p.add_argument(
-        "--sampling_method",
-        type=str,
-        default="random",
-        choices=["random", "low_frequency", "sequency"],
-    )
+    p.add_argument("--sampling_ratio", type=float, default=1 / 2)
 
     p.add_argument(
         "--algo",
         type=str,
-        default="DPS",
+        default="DiffPIR",
         choices=["DPS", "DDNM", "DiffPIR"],
     )
 
@@ -279,9 +249,8 @@ if __name__ == "__main__":
 
     ###################### DIFPIR PARAMS #########################
 
-    p.add_argument("--CG_iters_diffpir", type=int, default=20)
+    p.add_argument("--CG_iters_diffpir", type=int, default=10)
     p.add_argument("--noise_level_img", type=float, default=0.0)
-
 
     ###################### WANDB PARAMS #########################
     p.add_argument(

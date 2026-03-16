@@ -14,11 +14,10 @@ def _to_unit_interval(x: torch.Tensor) -> torch.Tensor:
     return x.clamp(0.0, 1.0)
 
 
-def psnr_reward(x_hat: torch.Tensor, x_true: torch.Tensor, eps: float = 1e-8) -> float:
+def psnr_reward(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
     """Compute PSNR in dB and return it as scalar reward."""
     pred = _to_unit_interval(x_hat)
     target = _to_unit_interval(x_true)
 
     mse = torch.mean((pred - target) ** 2).item()
-    mse = max(mse, eps)
     return float(10.0 * math.log10(1.0 / mse))
