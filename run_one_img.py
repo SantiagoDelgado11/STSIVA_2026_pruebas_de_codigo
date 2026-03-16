@@ -57,7 +57,7 @@ def main(opt):
 
     # ############################## IMAGE ############################
 
-    GT = next(iter(testloader))[0][opt.idx].unsqueeze(0).to(device)
+    GT = dataset[opt.idx][0].unsqueeze(0).to(device)
 
     # Normalize the image to [-1, 1] range
 
