@@ -5,19 +5,6 @@ import argparse
 from algos.dps import DPS
 
 
-def get_args():
-    parser = argparse.ArgumentParser(description="DPS solver configuration")
-    parser.add_argument("--noise_steps", type=int, default=1000)
-    parser.add_argument("--beta_start", type=float, default=1e-4)
-    parser.add_argument("--beta_end", type=float, default=0.02)
-    parser.add_argument("--img_size", type=int, default=32)
-    parser.add_argument("--schedule_name", type=str, default="cosine")
-    parser.add_argument("--channels", type=int, default=3)
-    parser.add_argument("--clip_denoised", action="store_true")
-    parser.add_argument("--scale", type=float, default=1.0)
-    return parser.parse_args()
-
-
 class DPSSolver:
     """Solver adapter with standardized solve(y, H) interface."""
 
@@ -27,27 +14,30 @@ class DPSSolver:
         self,
         model: torch.nn.Module,
         device: str | torch.device,
-        args=None,
+        noise_steps: int,
+        beta_start: float,
+        beta_end: float,
+        img_size: int,
+        schedule_name: str,
+        channels: int,
+        clip_denoised: bool,
+        scale: float,
     ) -> None:
-        
-        if args is None:
-            args = get_args()
 
         self.model = model
         self.device = torch.device(device)
-        self.args = args
         self._context: dict[str, Any] = {}
 
         self.solver = DPS(
-            noise_steps=args.noise_steps,
-            beta_start=args.beta_start,
-            beta_end=args.beta_end,
-            img_size=args.img_size,
+            noise_steps=noise_steps,
+            beta_start=beta_start,
+            beta_end=beta_end,
+            img_size=img_size,
             device=self.device,
-            schedule_name=args.schedule_name,
-            channels=args.channels,
-            clip_denoised=args.clip_denoised,
-            scale=args.scale,
+            schedule_name=schedule_name,
+            channels=channels,
+            clip_denoised=clip_denoised,
+            scale=scale,
         )
 
     def set_context(self, **kwargs: Any) -> None:

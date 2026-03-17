@@ -23,23 +23,6 @@ from solvers.dps_solver import DPSConfig, DPSSolver
 from solvers.solver_library import SolverLibrary
 from training.reinforce_trainer import ReinforceTrainer, ReinforceTrainerConfig
 from utils.SPC_model import SPCModel
-from utils.test_set_loader import TestDataset
-
-
-class SyntheticInverseDataset(Dataset):
-    """Fallback dataset used when no test .npy files are found."""
-
-    def __init__(self, length: int, image_size: int) -> None:
-        self.length = length
-        self.image_size = image_size
-
-    def __len__(self) -> int:
-        return self.length
-
-    def __getitem__(self, idx: int) -> torch.Tensor:
-        _ = idx
-        img = torch.rand(1, self.image_size, self.image_size, dtype=torch.float32)
-        return img
 
 
 def set_seed(seed: int) -> None:
@@ -49,37 +32,6 @@ def set_seed(seed: int) -> None:
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
-
-
-def load_yaml_config(path: str) -> dict[str, Any]:
-    """Load YAML configuration from disk."""
-    try:
-        import yaml
-    except ImportError as exc:
-        raise ImportError("PyYAML is required. Install it with: pip install pyyaml") from exc
-
-    with open(path, "r", encoding="utf-8") as file:
-        config = yaml.safe_load(file)
-    if not isinstance(config, dict):
-        raise ValueError("Configuration file must contain a mapping at top level.")
-    return config
-
-
-def build_dataset(config: dict[str, Any]) -> Dataset:
-    """Build real test dataset or synthetic fallback."""
-    dataset_root = config["dataset_root"]
-    transform = transforms.Compose(
-        [
-            transforms.ToTensor(),
-            transforms.Resize((config["image_size"], config["image_size"])),
-        ]
-    )
-
-    if os.path.isdir(dataset_root) and any(name.endswith(".npy") for name in os.listdir(dataset_root)):
-        return TestDataset(dataset_root, transform=transform)
-
-    print("No .npy test set found. Using synthetic dataset fallback.")
-    return SyntheticInverseDataset(length=512, image_size=config["image_size"])
 
 
 def build_backbone(config: dict[str, Any], device: torch.device) -> torch.nn.Module:
@@ -113,7 +65,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    config = load_yaml_config(args.config)
+    config = load_yaml_config(args.config)  # ACA BA EL ARGPARSER; REVISE TRAIN_DIFF PARA REFERENCIA
 
     set_seed(int(config.get("seed", 7)))
 
@@ -121,7 +73,7 @@ def main() -> None:
     device = torch.device(f"cuda:{int(config.get('gpu_id', 0))}" if use_cuda else "cpu")
 
     model = build_backbone(config=config, device=device)
-    dataset = build_dataset(config)
+    dataset = build_dataset(config)  # EL DATAE ES EL CIFAR 10 DE TRAINING
     dataloader = DataLoader(
         dataset,
         batch_size=int(config["batch_size"]),

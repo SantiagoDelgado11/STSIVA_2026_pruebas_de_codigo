@@ -102,7 +102,7 @@ def main(opt):
             device=device,
             img_size=opt.image_size,
             noise_steps=1000,
-            schedule_name="linear",
+            schedule_name="cosine",
             channels=3,
             cg_iters=opt.CG_iters_diffpir,
             noise_level_img=opt.noise_level_img,
@@ -249,7 +249,7 @@ if __name__ == "__main__":
 
     ###################### DIFPIR PARAMS #########################
 
-    p.add_argument("--CG_iters_diffpir", type=int, default=10)
+    p.add_argument("--CG_iters_diffpir", type=int, default=5)
     p.add_argument("--noise_level_img", type=float, default=0.0)
 
     ###################### WANDB PARAMS #########################
