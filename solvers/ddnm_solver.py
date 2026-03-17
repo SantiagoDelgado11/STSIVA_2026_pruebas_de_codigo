@@ -52,9 +52,7 @@ class DDNMSolver:
 
     def solve(self, y: torch.Tensor, H) -> torch.Tensor:
         """Run DDNM and return the reconstruction."""
-        x_true = self._context.get("x_true")
-        if x_true is None:
-            raise ValueError("DDNMSolver requires x_true in context before calling solve().")
+        x_true = self._context.get("x_true", None)
 
         return self.solver.sample(
             model=self.model,
