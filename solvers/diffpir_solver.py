@@ -65,7 +65,7 @@ class DiffPIRSolver:
         )
 
     def set_context(self, **kwargs: Any) -> None:
-        
+
         self._context = kwargs
 
 
@@ -78,5 +78,5 @@ class DiffPIRSolver:
                 y=y,
                 forward_pass=H.forward_pass,
                 transpose_pass=H.transpose_pass,
-                **self._context,  # ahora sí sirve
+                **self._context,  
             )
