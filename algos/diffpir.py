@@ -53,7 +53,7 @@ class DiffPIR:
         beta_end: float = 0.02,
         schedule_name: str = "linear",
         cg_iters: int = 40,
-        img_size: int = 256,
+        img_size: int = 32,
         channels: int = 1,
         lambda_: float = 1.0,
         noise_level_img: float = None,
