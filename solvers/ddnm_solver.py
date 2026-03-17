@@ -20,23 +20,31 @@ class DDNMSolver:
 
     name = "DDNM"
 
-    def __init__(self, model: torch.nn.Module, device: str | torch.device, config: DDNMConfig) -> None:
+    def __init__(
+            self,
+            model: torch.nn.Module,
+            device: str | torch.device,
+            args = None,
+    ) -> None:
+        
+
+        if args is None:
+            args = get_args()
+
         self.model = model
-        self.device = str(device)
-        self.config = config
+        self.device = torch.device(device)
+        self.args = args
         self._context: dict[str, Any] = {}
 
         self.solver = DDNM(
-            noise_steps=config.noise_steps,
-            beta_start=config.beta_start,
-            beta_end=config.beta_end,
-            img_size=config.img_size,
-            device=self.device,
-            schedule_name=config.schedule_name,
-            channels=config.channels,
-            eta=config.eta,
-            **config.extra_kwargs,
-        )
+            noise_steps=args.noise_steps,
+            beta_start=args.beta_start,
+            beta_end=args.beta_end,
+            img_size=args.img_size,
+            schedule_name=args.schedule_name,
+            channels=args.channels,
+            eta=args.eta,
+        )    
 
     def set_context(self, **kwargs: Any) -> None:
         """Set optional context (x_true used by existing DDNM signature)."""
