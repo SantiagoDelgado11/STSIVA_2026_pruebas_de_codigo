@@ -1,10 +1,7 @@
-"""RL environment for diffusion solver selection in inverse problems."""
-
 from __future__ import annotations
-
-from dataclasses import dataclass
+import argparse
 from typing import Any
-
+from argparse import ArgumentParser
 import torch
 
 from environment.reward import psnr_reward
@@ -12,14 +9,26 @@ from environment.state_builder import StateBuilder
 from solvers.solver_library import SolverLibrary
 
 
-@dataclass
+def get_args():
+    parser = argparse.ArgumentParser(description="Diffusion RL Environment")
+    parser.add_argument("--max_steps", type=int, default=1)
+    parser.add_argument("--device", type=str, default="cuda")
+    return parser.parse_args()
+
+
 class EpisodeSample:
     """Single inverse-problem sample for one episode."""
 
-    x_true: torch.Tensor
-    H: Any
-    # Kept for caller compatibility; ignored in this noise-free SPC environment.
-    noise_std: float = 0.0
+    def __init__(
+        self,
+        x_true: torch.Tensor,
+        H: Any,
+        noise_std: float = 0.0,
+    ) -> None:
+        self.x_true = x_true
+        self.H = H
+        self.noise_std = noise_std
+
 
 
 class DiffusionSolverEnv:
@@ -29,13 +38,16 @@ class DiffusionSolverEnv:
         self,
         solver_library: SolverLibrary,
         state_builder: StateBuilder,
-        max_steps: int = 1,
-        device: str | torch.device = "cuda",
+        args=None,
     ) -> None:
+
+        if args is None:
+            args = get_args()
+
         self.solver_library = solver_library
         self.state_builder = state_builder
-        self.max_steps = max_steps
-        self.device = torch.device(device)
+        self.max_steps = args.max_steps
+        self.device = torch.device(args.device) 
 
         self.iteration = 0
         self.previous_action: int = 0
