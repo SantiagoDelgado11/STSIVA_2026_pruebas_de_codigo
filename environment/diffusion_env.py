@@ -1,7 +1,7 @@
 from __future__ import annotations
 import argparse
 from typing import Any
-from argparse import ArgumentParser
+import argparse
 import torch
 
 from environment.reward import psnr_reward

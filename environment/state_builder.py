@@ -1,17 +1,15 @@
 """State feature construction based on lightweight solver statistics."""
 
 from __future__ import annotations
-
 from dataclasses import dataclass
-
+import argparse
 import torch
 
 
-@dataclass
-class StateBuilderConfig:
-    """Configuration for state vector generation."""
-
-    eps: float = 1e-8
+def get_args():
+    parser = argparse.ArgumentParser(description="StateBuilder configuration")
+    parser.add_argument("--eps", type=float, default=1e-8)
+    return parser.parse_args()
 
 
 class StateBuilder:
@@ -25,8 +23,11 @@ class StateBuilder:
     5. previous action a_{k-1}
     """
 
-    def __init__(self, config: StateBuilderConfig | None = None) -> None:
-        self.config = config or StateBuilderConfig()
+    def __init__(self, args=None) -> None:
+        if args is None:
+            args = get_args()
+
+        self.eps = args.eps
 
     def build(
         self,
