@@ -1,5 +1,3 @@
-"""Wrapper for the existing DPS implementation."""
-
 from __future__ import annotations
 from typing import Any
 import torch
@@ -26,27 +24,30 @@ class DPSSolver:
     name = "DPS"
 
     def __init__(
-        self, 
-        model: torch.nn.Module, 
-        device: str | torch.device, 
-        config: DPSConfig
-        ) -> None:
+        self,
+        model: torch.nn.Module,
+        device: str | torch.device,
+        args=None,
+    ) -> None:
+        
+        if args is None:
+            args = get_args()
+
         self.model = model
-        self.device = str(device)
-        self.config = config
+        self.device = torch.device(device)
+        self.args = args
         self._context: dict[str, Any] = {}
 
         self.solver = DPS(
-            noise_steps=config.noise_steps,
-            beta_start=config.beta_start,
-            beta_end=config.beta_end,
-            img_size=config.img_size,
+            noise_steps=args.noise_steps,
+            beta_start=args.beta_start,
+            beta_end=args.beta_end,
+            img_size=args.img_size,
             device=self.device,
-            schedule_name=config.schedule_name,
-            channels=config.channels,
-            clip_denoised=config.clip_denoised,
-            scale=config.scale,
-            **config.extra_kwargs,
+            schedule_name=args.schedule_name,
+            channels=args.channels,
+            clip_denoised=args.clip_denoised,
+            scale=args.scale,
         )
 
     def set_context(self, **kwargs: Any) -> None:
