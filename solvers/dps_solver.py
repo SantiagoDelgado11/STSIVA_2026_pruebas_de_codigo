@@ -1,28 +1,23 @@
 """Wrapper for the existing DPS implementation."""
 
 from __future__ import annotations
-
-from dataclasses import dataclass, field
 from typing import Any
-
 import torch
-
+import argparse
 from algos.dps import DPS
 
 
-@dataclass
-class DPSConfig:
-    """Configuration used to instantiate DPS."""
-
-    noise_steps: int = 1000
-    beta_start: float = 1e-4
-    beta_end: float = 0.02
-    img_size: int = 32
-    schedule_name: str = "cosine"
-    channels: int = 1
-    clip_denoised: bool = False
-    scale: float = 0.0125
-    extra_kwargs: dict[str, Any] = field(default_factory=dict)
+def get_args():
+    parser = argparse.ArgumentParser(description="DPS solver configuration")
+    parser.add_argument("--noise_steps", type=int, default=1000)
+    parser.add_argument("--beta_start", type=float, default=1e-4)
+    parser.add_argument("--beta_end", type=float, default=0.02)
+    parser.add_argument("--img_size", type=int, default=32)
+    parser.add_argument("--schedule_name", type=str, default="cosine")
+    parser.add_argument("--channels", type=int, default=3)
+    parser.add_argument("--clip_denoised", action="store_true")
+    parser.add_argument("--scale", type=float, default=1.0)
+    return parser.parse_args()
 
 
 class DPSSolver:
@@ -30,7 +25,12 @@ class DPSSolver:
 
     name = "DPS"
 
-    def __init__(self, model: torch.nn.Module, device: str | torch.device, config: DPSConfig) -> None:
+    def __init__(
+        self, 
+        model: torch.nn.Module, 
+        device: str | torch.device, 
+        config: DPSConfig
+        ) -> None:
         self.model = model
         self.device = str(device)
         self.config = config
