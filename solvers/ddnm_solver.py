@@ -1,28 +1,19 @@
-"""Wrapper for the existing DDNM implementation."""
-
 from __future__ import annotations
-
-from dataclasses import dataclass, field
 from typing import Any
-
 import torch
-
+import argparse 
 from algos.ddnm import DDNM
 
-
-@dataclass
-class DDNMConfig:
-    """Configuration used to instantiate DDNM."""
-
-    noise_steps: int = 1000
-    beta_start: float = 1e-4
-    beta_end: float = 0.02
-    img_size: int = 256
-    schedule_name: str = "cosine"
-    channels: int = 1
-    eta: float = 1.0
-    extra_kwargs: dict[str, Any] = field(default_factory=dict)
-
+def get_args():
+    parser = argparse.ArgumentParser(description="DDNM solver configuration")
+    parser.add_argument("--noise_steps", type=int, default=1000)
+    parser.add_argument("--beta_start", type=float, default=1e-4)
+    parser.add_argument("--beta_end", type=float, default=0.02)
+    parser.add_argument("--img_size", type=int, default=32)
+    parser.add_argument("--schedule_name", type=str, default="cosine")
+    parser.add_argument("--channels", type=int, default=3)
+    parser.add_argument("--eta", type=float, default=0.85)
+    return parser.parse_args()
 
 class DDNMSolver:
     """Solver adapter with standardized solve(y, H) interface."""
