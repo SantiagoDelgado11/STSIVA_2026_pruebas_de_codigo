@@ -184,17 +184,17 @@ def train(args):
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train RL-based diffusion solver selector.")
-    
 
-    parser.add_argument("seed", type=int, default=7)
-    parser.add_argument("device", type=str, default="cuda")
-    parser.add_argument("gpu_id", type=int, default=0)
+    parser.add_argument("--seed", type=int, default=7)
+    parser.add_argument("--device", type=str, default="cuda")
+    parser.add_argument("--gpu_id", type=int, default=0)
+    parser.add_argument("--batch_size", type=int, default=64)
 
-    parser.add_argument("batch_size", type=int, default=64)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--data_dir", type=str, default="./data")
 
     parser.add_argument("--weights", type=str, required=True)
+
     parser.add_argument("--image_size", type=int, default=32)
     parser.add_argument("--input_channels", type=int, default=3)
     parser.add_argument("--num_channels", type=int, default=64)
@@ -206,24 +206,22 @@ def parse_args():
     parser.add_argument("--value_coef", type=float, default=0.5)
     parser.add_argument("--entropy_coef", type=float, default=0.01)
 
- 
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--grad_clip_norm", type=float, default=1.0)
     parser.add_argument("--checkpoint_dir", type=str, default="weights/rl_agent")
     parser.add_argument("--checkpoint_every", type=int, default=10)
-
 
     parser.add_argument("--max_env_steps", type=int, default=1)
     parser.add_argument("--sampling_ratio", type=float, default=0.1)
     parser.add_argument("--sampling_method", type=str, default="gaussian")
     parser.add_argument("--measurement_noise_std", type=float, default=0.0)
 
- 
     parser.add_argument("--diffpir_steps", type=int, default=50)
     parser.add_argument("--dps_steps", type=int, default=50)
     parser.add_argument("--ddnm_steps", type=int, default=50)
 
     return parser.parse_args()
+
 
 
 
