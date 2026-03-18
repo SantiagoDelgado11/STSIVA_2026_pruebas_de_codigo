@@ -73,37 +73,30 @@ def train(args):
     diffpir_solver = DiffPIRSolver(
         model=model,
         device=device,
-        config=DiffPIRConfig(
-            img_size=args.image_size,
-            channels=args.input_channels,
-            steps=args.diffpir_steps,
-        ),
+        img_size=args.image_size,
+        channels=args.input_channels,
+        steps=args.diffpir_steps,
     )
-
     dps_solver = DPSSolver(
         model=model,
         device=device,
-        config=DPSConfig(
-            img_size=args.image_size,
-            channels=args.input_channels,
-            steps=args.dps_steps,
-        ),
+        img_size=args.image_size,
+        channels=args.input_channels,
+        steps=args.dps_steps,
     )
 
-    ddnm_solver = DDNMSolver(
+    dnm_solver = DDNMSolver(
         model = model,
         device=device,
-        config=DDNMConfig(
-            img_size=args.image_size,
-            channels=args.input_channels,
-            steps=args.ddnm_steps,
-        ),
+        img_size=args.image_size,
+        channels=args.input_channels,
+        steps=args.ddnm_steps,
     )
 
     solver_library = SolverLibrary(
         diffpir_solver=diffpir_solver,
         dps_solver=dps_solver,
-        ddnm_solver=ddnm_solver,
+        ddnm_solver=dnm_solver,
     )
 
 # Env + Agent
