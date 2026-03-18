@@ -186,11 +186,11 @@ def parse_args():
     parser = argparse.ArgumentParser(description="Train RL-based diffusion solver selector.")
     
 
-    parser = add.argument("seed", type=int, default=7)
-    parser = add.argument("device", type=str, default="cuda")
-    parser = add.argument("gpu_id", type=int, default=0)
+    parser.add_argument("seed", type=int, default=7)
+    parser.add_argument("device", type=str, default="cuda")
+    parser.add_argument("gpu_id", type=int, default=0)
 
-    parser = add.argument("batch_size", type=int, default=64)
+    parser.add_argument("batch_size", type=int, default=64)
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--data_dir", type=str, default="./data")
 
