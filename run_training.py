@@ -23,6 +23,8 @@ from solvers.dps_solver import DPSConfig, DPSSolver
 from solvers.solver_library import SolverLibrary
 from training.reinforce_trainer import ReinforceTrainer, ReinforceTrainerConfig
 from utils.SPC_model import SPCModel
+from torchvision.datasets import CIFAR10
+
 
 
 def set_seed(seed: int) -> None:
@@ -34,38 +36,151 @@ def set_seed(seed: int) -> None:
         torch.cuda.manual_seed_all(seed)
 
 
-def build_backbone(config: dict[str, Any], device: torch.device) -> torch.nn.Module:
-    """Load pre-trained diffusion model used by all reconstruction solvers."""
-    ckpt_path = config["weights"]
-    if not Path(ckpt_path).exists():
-        raise FileNotFoundError(f"Backbone checkpoint not found: {ckpt_path}")
+def build_backbone(args, device) -> torch.nn.Module:
 
-    checkpoint = torch.load(ckpt_path, map_location=device, weights_only=True)
+    if not Path(args.weights).exists():
+        raise FileNotFoundError(f"Checkpoint not found: {args.weights}")
+
+    checkpoint = torch.load(args.weights, map_location=device, weights_only=True)
     model = create_model(
-        image_size=config["image_size"],
-        num_channels=config["num_channels"],
-        num_res_blocks=config["num_res_blocks"],
-        input_channels=config["input_channels"],
+        image_size=args.image_size,
+        num_channels=args.num_channels,
+        num_res_blocks=args.num_res_blocks,
+        input_channels=args.input_channels,
     ).to(device)
     model.load_state_dict(checkpoint["model_state"])
     model.eval()
     return model
 
+def train(args):
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train RL solver-selection agent.")
-    parser.add_argument(
-        "--config",
-        type=str,
-        default="configs/training_config.yaml",
-        help="Path to YAML training configuration.",
+    set_seed(args.seed)
+
+    use_cuda = torch.cuda.is_available() and str(args.device).startswith("cuda")
+    device = torch.device(f"cuda:{args.gpu_id}" if use_cuda else "cpu")
+
+    model = build_backbone(args=args, device=device)
+
+    transform = transforms.Compose([
+        transforms.toTensor(),
+    ])
+
+    dataset = CIFAR10(root=args.data_dir, train=True, download=True, transform=transform)
+
+    dataloader = DataLoader(
+        dataset,
+        batch_size=args.batch_size,
+        shuffle=True,
+        num_workers=0,
+        pin_memory=use_cuda,
+        drop_last=True,
     )
-    return parser.parse_args()
+
+    #SOLVER LIBRARY
+
+    diffpir_solver = DiffPIRSolver(
+        model=model,
+        device=device,
+        config=DiffPIRConfig(
+            img_size=args.image_size,
+            channels=args.input_channels,
+            steps=args.diffpir_steps,
+        ),
+    )
+
+    dps_solver = DPSSolver(
+        model=model,
+        device=device,
+        config=DPSConfig(
+            img_size=args.image_size,
+            channels=args.input_channels,
+            steps=args.dps_steps,
+        ),
+    )
+
+    ddnm_solver = DDNMSolver(
+        model = model,
+        device=device,
+        config=DDNMConfig(
+            img_size=args.image_size,
+            channels=args.input_channels,
+            steps=args.ddnm_steps,
+        ),
+    )
+
+    solver_library = SolverLibrary(
+        diffpir_solver=diffpir_solver,
+        dps_solver=dps_solver,
+        ddnm_solver=ddnm_solver,
+    )
+
+# Env + Agent
+
+    state_builder = StateBuilder()
+
+    env = DiffusionSolverEnv(
+        solver_library=solver_library,
+        state_builder=state_builder,
+        max_steps=args.max_env_steps,
+        device=device,
+    )
+
+    agent = ReinforceAgent(
+        state_dim=5,
+        action_dim=solver_library.action_dim,
+        value_coef=args.value_coef,
+        entropy_coef=args.entropy_coef,
+    ).to(device)
+
+    trainer = ReinforceTrainer(
+        agent=agent,
+        env=env,
+        config=ReinforceTrainerConfig(
+            num_episodes=args.num_episodes,
+            gamma=args.gamma,
+            learning_rate=args.learning_rate,
+            weight_decay=args.weight_decay,
+            grad_clip_norm=args.grad_clip_norm,
+            checkpoint_dir=args.checkpoint_dir,
+            checkpoint_every=args.checkpoint_every,
+        ),
+        device=device,
+    )
+
+    data_iter = iter(dataloader)
+
+def sample_episode():
+        nonlocal data_iter
+
+        try:
+            batch = next(data_iter)
+        except StopIteration:
+            data_iter = iter(dataloader)
+            batch = next(data_iter)
+
+        images, _ = batch
+        x_true = images[0:1].to(device)
+        x_true = x_true * 2.0 - 1.0
+
+        operator = SPCModel(
+            im_size=args.image_size,
+            compression_ratio=args.sampling_ratio,
+            sampling_method=args.sampling_method,
+            device=str(device),
+        ).to(device)
+
+        return EpisodeSample(
+            x_true=x_true,
+            H=operator,
+            noise_std=args.measurement_noise_std,
+        )
+
+
 
 
 def main() -> None:
     args = parse_args()
-    config = load_yaml_config(args.config)  # ACA BA EL ARGPARSER; REVISE TRAIN_DIFF PARA REFERENCIA
+    config = load_yaml_config(args.config)  # ACA VA EL ARGPARSER; REVISE TRAIN_DIFF PARA REFERENCIA
 
     set_seed(int(config.get("seed", 7)))
 

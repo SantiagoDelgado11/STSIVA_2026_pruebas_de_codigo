@@ -60,6 +60,8 @@ class ReinforceAgent(nn.Module):
         entropy = dist.entropy()
         return log_probs, entropy, values
 
+    #Make changes here to compute_loss, REINFORCE loss with value and entropy terms
+
     def compute_loss(
         self,
         log_probs: torch.Tensor,
