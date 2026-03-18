@@ -1,5 +1,3 @@
-"""REINFORCE agent with value baseline and entropy regularization."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -7,7 +5,6 @@ from dataclasses import dataclass
 import torch
 from torch import nn
 from torch.distributions import Categorical
-
 from agents.policy_network import PolicyNetwork
 
 

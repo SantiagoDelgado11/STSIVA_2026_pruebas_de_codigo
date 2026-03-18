@@ -15,9 +15,9 @@ from agents.agent import ReinforceAgent
 from environment.diffusion_env import DiffusionSolverEnv, EpisodeSample
 from environment.state_builder import StateBuilder
 from guided_diffusion.script_util import create_model
-from solvers.ddnm_solver import DDNMConfig, DDNMSolver
-from solvers.diffpir_solver import DiffPIRConfig, DiffPIRSolver
-from solvers.dps_solver import DPSConfig, DPSSolver
+from solvers.ddnm_solver import DDNMSolver
+from solvers.diffpir_solver import DiffPIRSolver
+from solvers.dps_solver import  DPSSolver
 from solvers.solver_library import SolverLibrary
 from training.reinforce_trainer import ReinforceTrainer, ReinforceTrainerConfig
 from utils.SPC_model import SPCModel
@@ -59,20 +59,14 @@ def train(args):
 
     model = build_backbone(args=args, device=device)
 
-    transform = transforms.Compose([
-        transforms.toTensor(),
-    ])
-
-    dataset = CIFAR10(root=args.data_dir, train=True, download=True, transform=transform)
-
+    train_dataset = CIFAR10(root="./data", train=True, download=True, transform=transforms.ToTensor())
     dataloader = DataLoader(
-        dataset,
+        train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
         num_workers=0,
-        pin_memory=use_cuda,
-        drop_last=True,
     )
+
 
     #SOLVER LIBRARY
 
@@ -193,7 +187,7 @@ def parse_args():
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--data_dir", type=str, default="./data")
 
-    parser.add_argument("--weights", type=str, required=True)
+    parser.add_argument("--weights", type=str, default="weights/e_1000_bs_64_lr_0.0003_seed_2_img_32_schedule_cosine_gpu_0_c_3_si_100/checkpoints/latest.pth.tar")
 
     parser.add_argument("--image_size", type=int, default=32)
     parser.add_argument("--input_channels", type=int, default=3)
@@ -221,8 +215,6 @@ def parse_args():
     parser.add_argument("--ddnm_steps", type=int, default=50)
 
     return parser.parse_args()
-
-
 
 
 def main():
