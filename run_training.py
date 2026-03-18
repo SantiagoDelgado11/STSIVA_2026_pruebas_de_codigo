@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+from operator import add
 import os
 import random
 from pathlib import Path
@@ -149,7 +150,7 @@ def train(args):
 
     data_iter = iter(dataloader)
 
-def sample_episode():
+    def sample_episode():
         nonlocal data_iter
 
         try:
@@ -176,125 +177,62 @@ def sample_episode():
         )
 
 
-
-
-def main() -> None:
-    args = parse_args()
-    config = load_yaml_config(args.config)  # ACA VA EL ARGPARSER; REVISE TRAIN_DIFF PARA REFERENCIA
-
-    set_seed(int(config.get("seed", 7)))
-
-    use_cuda = torch.cuda.is_available() and str(config.get("device", "cuda")).startswith("cuda")
-    device = torch.device(f"cuda:{int(config.get('gpu_id', 0))}" if use_cuda else "cpu")
-
-    model = build_backbone(config=config, device=device)
-    dataset = build_dataset(config)  # EL DATAE ES EL CIFAR 10 DE TRAINING
-    dataloader = DataLoader(
-        dataset,
-        batch_size=int(config["batch_size"]),
-        shuffle=True,
-        num_workers=0,
-        pin_memory=torch.cuda.is_available(),
-        drop_last=True,
-    )
-
-    diffpir_solver = DiffPIRSolver(
-        model=model,
-        device=device,
-        config=DiffPIRConfig(
-            img_size=config["image_size"],
-            channels=config["input_channels"],
-            **config["solver_diffpir"],
-        ),
-    )
-    dps_solver = DPSSolver(
-        model=model,
-        device=device,
-        config=DPSConfig(
-            img_size=config["image_size"],
-            channels=config["input_channels"],
-            **config["solver_dps"],
-        ),
-    )
-    ddnm_solver = DDNMSolver(
-        model=model,
-        device=device,
-        config=DDNMConfig(
-            img_size=config["image_size"],
-            channels=config["input_channels"],
-            **config["solver_ddnm"],
-        ),
-    )
-
-    solver_library = SolverLibrary(
-        diffpir_solver=diffpir_solver,
-        dps_solver=dps_solver,
-        ddnm_solver=ddnm_solver,
-    )
-
-    state_builder = StateBuilder()
-    env = DiffusionSolverEnv(
-        solver_library=solver_library,
-        state_builder=state_builder,
-        max_steps=int(config.get("max_env_steps", 1)),
-        device=device,
-    )
-
-    agent = ReinforceAgent(
-        state_dim=5,
-        action_dim=solver_library.action_dim,
-        value_coef=float(config.get("value_coef", 0.5)),
-        entropy_coef=float(config.get("entropy_coef", 0.01)),
-    ).to(device)
-
-    trainer = ReinforceTrainer(
-        agent=agent,
-        env=env,
-        config=ReinforceTrainerConfig(
-            num_episodes=int(config["num_episodes"]),
-            gamma=float(config["gamma"]),
-            learning_rate=float(config["learning_rate"]),
-            weight_decay=float(config.get("weight_decay", 0.0)),
-            grad_clip_norm=float(config.get("grad_clip_norm", 1.0)),
-            checkpoint_dir=str(config.get("checkpoint_dir", "weights/rl_solver_selector")),
-            checkpoint_every=int(config.get("checkpoint_every", 10)),
-        ),
-        device=device,
-    )
-
-    data_iter = iter(dataloader)
-
-    def sample_episode() -> EpisodeSample:
-        nonlocal data_iter
-        try:
-            batch = next(data_iter)
-        except StopIteration:
-            data_iter = iter(dataloader)
-            batch = next(data_iter)
-
-        x_true = batch[0:1].to(device)
-        x_true = x_true * 2.0 - 1.0
-
-        operator = SPCModel(
-            im_size=int(config["image_size"]),
-            compression_ratio=float(config["sampling_ratio"]),
-            sampling_method=str(config["sampling_method"]),
-            device=str(device),
-        ).to(device)
-
-        return EpisodeSample(
-            x_true=x_true,
-            H=operator,
-            noise_std=float(config.get("measurement_noise_std", 0.0)),
-        )
-
     logs = trainer.train(sample_episode)
 
     rewards = [entry["reward"] for entry in logs]
     print("Training finished.")
     print(f"Episodes: {len(logs)}")
-    print(f"Average reward (PSNR): {np.mean(rewards):.4f}")
-    print(f"Best reward (PSNR): {np.max(rewards):.4f}")
+    print(f"Average Reward: {np.mean(rewards):.4f}")
+    print(f"Best Reward: {np.max(rewards):.4f}")
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train RL-based diffusion solver selector.")
+    
+
+    parser = add.argument("seed", type=int, default=7)
+    parser = add.argument("device", type=str, default="cuda")
+    parser = add.argument("gpu_id", type=int, default=0)
+
+    parser = add.argument("batch_size", type=int, default=64)
+    parser.add_argument("--num_workers", type=int, default=4)
+    parser.add_argument("--data_dir", type=str, default="./data")
+
+    parser.add_argument("--weights", type=str, required=True)
+    parser.add_argument("--image_size", type=int, default=32)
+    parser.add_argument("--input_channels", type=int, default=3)
+    parser.add_argument("--num_channels", type=int, default=64)
+    parser.add_argument("--num_res_blocks", type=int, default=3)
+
+    parser.add_argument("--num_episodes", type=int, default=1000)
+    parser.add_argument("--gamma", type=float, default=0.99)
+    parser.add_argument("--learning_rate", type=float, default=1e-4)
+    parser.add_argument("--value_coef", type=float, default=0.5)
+    parser.add_argument("--entropy_coef", type=float, default=0.01)
+
+ 
+    parser.add_argument("--weight_decay", type=float, default=0.0)
+    parser.add_argument("--grad_clip_norm", type=float, default=1.0)
+    parser.add_argument("--checkpoint_dir", type=str, default="weights/rl_agent")
+    parser.add_argument("--checkpoint_every", type=int, default=10)
+
+
+    parser.add_argument("--max_env_steps", type=int, default=1)
+    parser.add_argument("--sampling_ratio", type=float, default=0.1)
+    parser.add_argument("--sampling_method", type=str, default="gaussian")
+    parser.add_argument("--measurement_noise_std", type=float, default=0.0)
+
+ 
+    parser.add_argument("--diffpir_steps", type=int, default=50)
+    parser.add_argument("--dps_steps", type=int, default=50)
+    parser.add_argument("--ddnm_steps", type=int, default=50)
+
+    return parser.parse_args()
+
+
+
+def main():
+    args = parse_args()
+    train(args)
 
 
 if __name__ == "__main__":
