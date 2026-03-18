@@ -1,7 +1,4 @@
-"""Entry point for training RL-based diffusion solver selection."""
-
 from __future__ import annotations
-
 import argparse
 from operator import add
 import os
