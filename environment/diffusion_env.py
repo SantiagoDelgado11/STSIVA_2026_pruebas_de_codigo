@@ -1,17 +1,16 @@
 from __future__ import annotations
 import argparse
 from typing import Any
-import argparse
 import torch
 
-from environment.reward import psnr_reward
+from environment.reward import psnr_reward, ssim_reward, psnr_db
 from environment.state_builder import StateBuilder
 from solvers.solver_library import SolverLibrary
 
 
 def get_args():
     parser = argparse.ArgumentParser(description="Diffusion RL Environment")
-    parser.add_argument("--max_steps", type=int, default=1)
+    parser.add_argument("--max_steps", type=int, default=5)
     parser.add_argument("--device", type=str, default="cuda")
     return parser.parse_args()
 
@@ -91,18 +90,23 @@ class DiffusionSolverEnv:
 
         solver = self.solver_library.get_solver(action)
         solver.set_context(x_true=self.current_sample.x_true)
+        
         x_prev = self.x_current
+
         x_hat = self.solver_library.apply_action(
             action=action,
             x_k=x_prev,
             y=self.y,
             Phi=self.current_sample.H,
         )
+
         self.x_previous = x_prev
         self.x_current = x_hat
         self.previous_action = action
 
-        reward = psnr_reward(x_hat=x_hat, x_true=self.current_sample.x_true)
+        reward = psnr_reward(x_hat, self.current_sample.x_true)
+        psnr_real = psnr_db(x_hat, self.current_sample.x_true)
+        ssim = ssim_reward(x_hat, self.current_sample.x_true)
 
         self.iteration += 1
         done = self.iteration >= self.max_steps
@@ -120,5 +124,7 @@ class DiffusionSolverEnv:
         info = {
             "solver": solver.name,
             "psnr": reward,
+            "psnr_db": psnr_real,
+            "ssim": ssim,
         }
         return next_state, reward, done, info

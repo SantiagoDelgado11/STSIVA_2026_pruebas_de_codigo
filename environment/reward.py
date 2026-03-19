@@ -20,6 +20,14 @@ def psnr_reward(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
     mse = torch.mean((pred - target) ** 2).item()
     return float(10.0 * math.log10(1.0 / mse))
 
+def psnr_db(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
+    """Compute PSNR in dB (solo para logging / análisis)."""
+    pred = _to_unit_interval(x_hat)
+    target = _to_unit_interval(x_true)
+
+    mse = torch.mean((pred - target) ** 2).item()
+    return float(10.0 * math.log10(1.0 / (mse + 1e-8)))
+
 def ssim_reward(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
 
     """Compute SSIM and return it as scalar reward."""
