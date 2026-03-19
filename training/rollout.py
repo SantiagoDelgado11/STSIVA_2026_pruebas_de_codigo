@@ -30,12 +30,16 @@ def discounted_returns(rewards: list[float], gamma: float) -> torch.Tensor:
         running = reward + gamma * running
         returns.append(running)
     returns.reverse()
-    return torch.tensor(returns, dtype=torch.float32)
+    return torch.tensor(
+        returns, 
+        dtype=torch.float32, 
+        device=torch.devicedevice,
+        )
 
 
 def rollout_episode(
     env: DiffusionSolverEnv,
-    agent: ReinforceAgent,
+    agent: ReinforceAgent,  
     sample: EpisodeSample,
     gamma: float,
     device: str | torch.device,
@@ -54,13 +58,18 @@ def rollout_episode(
 
     while not done:
         policy_step = agent.select_action(state.unsqueeze(0))
+
         next_state, reward, done, info = env.step(policy_step.action)
 
-        states.append(state)
+        states.append(state.detach().cpu())
         actions.append(policy_step.action)
-        log_probs.append(policy_step.log_prob.squeeze())
-        entropies.append(policy_step.entropy.squeeze())
-        values.append(policy_step.value.squeeze())
+
+        log_probs.append(policy_step.log_prob.detach().cpu().squeeze())
+
+        entropies.append(policy_step.entropy.detach().cpu().squeeze())
+
+        values.append(policy_step.value.detach().cpu().squeeze())
+
         rewards.append(float(reward))
 
         state = next_state.to(device)
