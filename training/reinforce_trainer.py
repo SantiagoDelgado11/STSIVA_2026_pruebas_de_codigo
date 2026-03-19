@@ -1,5 +1,3 @@
-"""REINFORCE training loop for diffusion solver selection."""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -61,15 +59,13 @@ class ReinforceTrainer:
         )
 
     def train(self, episode_sampler) -> list[dict[str, float]]:
-        """Train for configured episodes.
 
-        episode_sampler must return EpisodeSample instances.
-        """
         self.agent.train()
         logs: list[dict[str, float]] = []
 
         for episode in range(1, self.config.num_episodes + 1):
             sample: EpisodeSample = episode_sampler()
+
             trajectory, returns, info = rollout_episode(
                 env=self.env,
                 agent=self.agent,
@@ -78,20 +74,32 @@ class ReinforceTrainer:
                 device=self.device,
             )
 
-            log_probs = torch.stack(trajectory.log_probs)
-            values = torch.stack(trajectory.values)
-            entropies = torch.stack(trajectory.entropies)
+            states = torch.stack(trajectory.states).to(self.device)
+            actions = torch.tensor(trajectory.actions).to(self.device)
+
+
+            old_log_probs = torch.stack(trajectory.log_probs).to(self.device)
+
+            log_probs, entropies, values = self.agent.evaluate_actions(
+                states=states,
+                actions=actions,
+            )
 
             loss, metrics = self.agent.compute_loss(
                 log_probs=log_probs,
-                values=values,
+                old_log_probs=old_log_probs,
+                values=values.squeeze(),
                 returns=returns,
                 entropies=entropies,
             )
 
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(self.agent.parameters(), self.config.grad_clip_norm)
+            torch.nn.utils.clip_grad_norm_(
+                self.agent.parameters(),
+                self.config.grad_clip_norm
+            )
+            
             self.optimizer.step()
 
             episode_log = {
