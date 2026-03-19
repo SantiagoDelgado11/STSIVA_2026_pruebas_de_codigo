@@ -1,7 +1,6 @@
 """State feature construction based on lightweight solver statistics."""
 
 from __future__ import annotations
-from dataclasses import dataclass
 import argparse
 import torch
 
@@ -9,7 +8,7 @@ import torch
 def get_args():
     parser = argparse.ArgumentParser(description="StateBuilder configuration")
     parser.add_argument("--eps", type=float, default=1e-8)
-    return parser.parse_args()
+    return parser.parse_known_args()[0]
 
 
 class StateBuilder:
@@ -40,7 +39,7 @@ class StateBuilder:
         previous_action: int,
     ) -> torch.Tensor:
         """Build a 5-D feature vector for a single environment step."""
-        eps = self.config.eps
+        eps = self.eps
 
         residual = H.forward_pass(x_estimate) - y
         fidelity = torch.linalg.norm(residual) ** 2
