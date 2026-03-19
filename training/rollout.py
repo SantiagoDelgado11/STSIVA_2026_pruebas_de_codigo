@@ -26,6 +26,7 @@ def discounted_returns(rewards: list[float], gamma: float) -> torch.Tensor:
     """Compute discounted returns R_t."""
     returns = []
     running = 0.0
+
     for reward in reversed(rewards):
         running = reward + gamma * running
         returns.append(running)
@@ -33,7 +34,7 @@ def discounted_returns(rewards: list[float], gamma: float) -> torch.Tensor:
     return torch.tensor(
         returns, 
         dtype=torch.float32, 
-        device=torch.devicedevice,
+        device=device,
         )
 
 
@@ -82,5 +83,9 @@ def rollout_episode(
         values=values,
         rewards=rewards,
     )
-    returns = discounted_returns(rewards, gamma=gamma).to(device)
+    returns = discounted_returns(
+        rewards, 
+        gamma=gamma,
+        device=device,
+    )
     return trajectory, returns, info
