@@ -14,7 +14,7 @@ class DDNMSolver:
         self,
         model: torch.nn.Module,
         device: str | torch.device,
-        noise_steps: int,
+        steps: int,
         beta_start: float,
         beta_end: float,
         img_size: int,
@@ -28,7 +28,7 @@ class DDNMSolver:
         self._context: dict[str, Any] = {}
 
         self.solver = DDNM(
-            noise_steps=noise_steps,
+            noise_steps=steps,
             beta_start=beta_start,
             beta_end=beta_end,
             img_size=img_size,

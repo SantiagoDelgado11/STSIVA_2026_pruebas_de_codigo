@@ -17,7 +17,7 @@ class DiffPIRSolver:
         self,
         model: torch.nn.Module,
         device: str | torch.device,
-        noise_steps: int,
+        steps: int,
         beta_start: float,
         beta_end: float,
         schedule_name: str,
@@ -40,7 +40,7 @@ class DiffPIRSolver:
         self.model.eval()
 
         self.solver = DiffPIR(
-            noise_steps=noise_steps,
+            noise_steps=steps,
             beta_start=beta_start,
             beta_end=beta_end,
             schedule_name=schedule_name,
