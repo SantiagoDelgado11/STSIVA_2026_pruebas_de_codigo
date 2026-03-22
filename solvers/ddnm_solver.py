@@ -14,13 +14,13 @@ class DDNMSolver:
         self,
         model: torch.nn.Module,
         device: str | torch.device,
-        steps: int,
-        beta_start: float,
-        beta_end: float,
-        img_size: int,
-        schedule_name: str,
-        channels: int,
-        eta: float,
+        steps: int = 1000,
+        beta_start: float = 1e-4,
+        beta_end: float = 0.02,
+        img_size: int = 32,
+        schedule_name: str = "cosine",
+        channels: int = 1,
+        eta: float = 0.85,
     ) -> None:
 
         self.model = model
