@@ -1,11 +1,6 @@
-"""Trajectory collection helpers."""
-
 from __future__ import annotations
-
 from dataclasses import dataclass
-
 import torch
-
 from agents.agent import ReinforceAgent
 from environment.diffusion_env import DiffusionSolverEnv, EpisodeSample
 
@@ -22,7 +17,7 @@ class Trajectory:
     rewards: list[float]
 
 
-def discounted_returns(rewards: list[float], gamma: float) -> torch.Tensor:
+def discounted_returns(rewards: list[float], gamma: float, device: str | torch.device) -> torch.Tensor:
     """Compute discounted returns R_t."""
     returns = []
     running = 0.0
@@ -35,7 +30,7 @@ def discounted_returns(rewards: list[float], gamma: float) -> torch.Tensor:
         returns, 
         dtype=torch.float32, 
         device=device,
-        )
+    )
 
 
 def rollout_episode(

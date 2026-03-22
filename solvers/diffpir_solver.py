@@ -70,5 +70,5 @@ class DiffPIRSolver:
                 y=y,
                 forward_pass=H.forward_pass,
                 transpose_pass=H.transpose_pass,
-                **self._context,
+                #**self._context,
             )
