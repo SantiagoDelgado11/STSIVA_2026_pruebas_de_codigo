@@ -37,16 +37,17 @@ class DiffusionSolverEnv:
         self,
         solver_library: SolverLibrary,
         state_builder: StateBuilder,
+        max_steps: int = 5,
+        device: str | torch.device = "cuda",
         args=None,
     ) -> None:
 
-        if args is None:
-            args = get_args()
-
-        self.solver_library = solver_library
-        self.state_builder = state_builder
-        self.max_steps = args.max_steps
-        self.device = torch.device(args.device) 
+        if args is not None:
+            self.max_steps = args.max_steps
+            self.device =  torch.device(args.device)
+        else:
+            self.max_steps = max_steps
+            self.device = torch.device(device)         
 
         self.iteration = 0
         self.previous_action: int = 0
