@@ -150,7 +150,6 @@ def train(args):
         operator = SPCModel(
             im_size=args.image_size,
             compression_ratio=args.sampling_ratio,
-            device=str(device),
         ).to(device)
 
         return EpisodeSample(

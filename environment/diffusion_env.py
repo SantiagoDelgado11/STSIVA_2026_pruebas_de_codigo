@@ -42,6 +42,9 @@ class DiffusionSolverEnv:
         args=None,
     ) -> None:
 
+        self.solver_library = solver_library
+        self.state_builder = state_builder
+        
         if args is not None:
             self.max_steps = args.max_steps
             self.device =  torch.device(args.device)
