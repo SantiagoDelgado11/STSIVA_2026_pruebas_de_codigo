@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import Any
 import torch
-import argparse
 from algos.ddnm import DDNM
 
 
@@ -9,6 +8,7 @@ class DDNMSolver:
     """Solver adapter with standardized solve(y, H) interface."""
 
     name = "DDNM"
+    supports_continuation = False
 
     def __init__(
         self,
@@ -38,16 +38,14 @@ class DDNMSolver:
         )
 
     def set_context(self, **kwargs: Any) -> None:
-        """Set optional context (x_true used by existing DDNM signature)."""
         self._context = kwargs
 
-    def solve(self, y: torch.Tensor, H) -> torch.Tensor:
-        """Run DDNM and return the reconstruction."""
+    def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H) -> torch.Tensor:
+        _ = x_k
         x_true = self._context.get("x_true", None)
-
         return self.solver.sample(
             model=self.model,
-            y=y,
+            y = y.to(self.device),
             pseudo_inverse=H.transpose_pass,
             forward_pass=H.forward_pass,
             ground_truth=x_true,

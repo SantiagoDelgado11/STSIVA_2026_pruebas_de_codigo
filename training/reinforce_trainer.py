@@ -22,6 +22,10 @@ class ReinforceTrainerConfig:
     grad_clip_norm: float = 1.0
     checkpoint_dir: str = "weights/rl_solver_selector"
     checkpoint_every: int = 50
+    normalize_returns: bool = True
+    normalize_advantages: bool = True
+    max_abs_advantage: float = 5.0
+    eps: float = 1e-8
 
 
 class ReinforceTrainer:
@@ -58,8 +62,17 @@ class ReinforceTrainer:
             ckpt_path,
         )
 
-    def train(self, episode_sampler) -> list[dict[str, float]]:
+    def _normalize(self, tensor: torch.Tensor) -> torch.Tensor:
+        std = tensor.std(unbiased=False)
+        if torch.isnan(std) or std.item() < self.config.eps:
+            return tensor - tensor.mean()
+        return (tensor - tensor.mean()) / (std + self.config.eps)
 
+    def _normalize_advantages(self, advantages: torch.Tensor) -> torch.Tensor:
+        normalized = self._normalize(advantages)
+        return torch.clamp(normalized, -self.config.max_abs_advantage, self.config.max_abs_advantage)
+
+    def train(self, episode_sampler) -> list[dict[str, float]]:
         self.agent.train()
         logs: list[dict[str, float]] = []
 
@@ -75,31 +88,43 @@ class ReinforceTrainer:
             )
 
             states = torch.stack(trajectory.states).to(self.device)
-            actions = torch.tensor(trajectory.actions).to(self.device)
-
+            actions = torch.tensor(trajectory.actions, dtype=torch.long, device=self.device)
 
             old_log_probs = torch.stack(trajectory.log_probs).to(self.device)
+            _ = old_log_probs
+
+            targets = returns
+            if self.config.normalize_returns:
+                targets = self._normalize(targets)
+
 
             log_probs, entropies, values = self.agent.evaluate_actions(
                 states=states,
                 actions=actions,
             )
 
-            loss, metrics = self.agent.compute_loss(
-                log_probs=log_probs,
-                old_log_probs=old_log_probs,
-                values=values.squeeze(),
-                returns=returns,
-                entropies=entropies,
-            )
+            values = values.squeeze(-1)
+
+            advantages = targets - values.detach()
+            if self.config.normalize_advantages:
+                advantages = self._normalize_advantages(advantages)
+
+            # REINFORCE objective with standardized advantages before multiplying by log_prob.
+            policy_loss = -(log_probs * advantages).mean()
+            value_loss = torch.mean((values - targets) ** 2)
+            entropy_bonus = entropies.mean()
+            loss = policy_loss + self.agent.value_coef * value_loss - self.agent.entropy_coef * entropy_bonus
+
+            if not torch.isfinite(loss):
+                continue
 
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(
+            grad_norm = torch.nn.utils.clip_grad_norm_(
                 self.agent.parameters(),
-                self.config.grad_clip_norm
+                self.config.grad_clip_norm,
             )
-            
+
             self.optimizer.step()
 
             episode_log = {
@@ -108,7 +133,16 @@ class ReinforceTrainer:
                 "selected_action": float(trajectory.actions[-1]),
                 "selected_solver": float(["DDNM", "DPS", "DiffPIR"].index(info["solver"])),
                 "psnr": float(info["psnr"]),
-                **metrics,
+                "loss_total": float(loss.item()),
+                "loss_policy": float(policy_loss.item()),
+                "loss_value": float(value_loss.item()),
+                "entropy": float(entropy_bonus.item()),
+                "advantage_mean": float(advantages.mean().item()),
+                "returns_mean": float(targets.mean().item()),
+                "ratio_mean": 1.0,
+                "grad_norm": float(grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm),
+                "bandit_mode": float(bool(info.get("bandit_mode", False))),
+
             }
             logs.append(episode_log)
 
@@ -118,7 +152,8 @@ class ReinforceTrainer:
                     f"reward={episode_log['reward']:.3f} "
                     f"solver={info['solver']} "
                     f"psnr={episode_log['psnr']:.3f} "
-                    f"loss={metrics['loss_total']:.4f}"
+                    f"loss={episode_log['loss_total']:.4f} "
+                    f"grad_norm={episode_log['grad_norm']:.4f}"
                 )
 
             if episode % self.config.checkpoint_every == 0:

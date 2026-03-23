@@ -1,17 +1,15 @@
-"""Wrapper for the existing DiffPIR implementation."""
-
 from __future__ import annotations
 from typing import Any
-import argparse
 import torch
 
 from algos.diffpir import DiffPIR
 
 
 class DiffPIRSolver:
-    """Solver adapter with standardized solve(y, H) interface."""
+    """Solver adapter with continuation-aware interface."""
 
     name = "DiffPIR"
+    supports_continuation = False
 
     def __init__(
         self,
@@ -61,14 +59,13 @@ class DiffPIRSolver:
 
         self._context = kwargs
 
-    def solve(self, y: torch.Tensor, H) -> torch.Tensor:
-        y = y.to(self.device)
+    def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H) -> torch.Tensor:
+        _ = x_k
 
         with torch.no_grad():
             return self.solver.sample(
                 model=self.model,
-                y=y,
+                y=y.to(self.device),
                 forward_pass=H.forward_pass,
                 transpose_pass=H.transpose_pass,
-                #**self._context,
             )

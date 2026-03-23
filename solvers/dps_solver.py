@@ -1,7 +1,6 @@
 from __future__ import annotations
 from typing import Any
 import torch
-import argparse
 from algos.dps import DPS
 
 
@@ -9,6 +8,7 @@ class DPSSolver:
     """Solver adapter with standardized solve(y, H) interface."""
 
     name = "DPS"
+    supports_continuation = False
 
     def __init__(
         self,
@@ -44,10 +44,10 @@ class DPSSolver:
         """Store optional contextual information for compatibility."""
         self._context = kwargs
 
-    def solve(self, y: torch.Tensor, H) -> torch.Tensor:
-        """Run DPS and return the reconstruction."""
+    def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H) -> torch.Tensor:
+        _ = x_k
         return self.solver.sample(
             model=self.model,
-            y=y,
+            y=y.to(self.device),
             forward_pass=H.forward_pass,
         )

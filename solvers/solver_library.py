@@ -1,7 +1,4 @@
-"""Action-to-solver mapping for RL training."""
-
 from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Any
 
@@ -27,47 +24,54 @@ class SolverLibrary:
             2: self.diffpir_solver,
         }
 
-    def ddnm_step(self, x_k: Any, y, Phi):
-        """Apply DDNM update for the current estimate.
+    def _validate_action(self, action: int) -> None:
+        if action not in self._action_to_solver:
+            raise ValueError(f"Invalid action {action}. Expected one of {list(self._action_to_solver)}")
 
-        x_k is accepted for interface compatibility with iterative dynamics.
-        """
-        _ = x_k
-        return self.ddnm_solver.solve(y, Phi)
+    def _solve(self, action: int, x_k: Any, y, Phi):
+        solver = self.get_solver(action)
+        return solver.solve(x_k=x_k, y=y, H=Phi)
+    
+
+    def ddnm_step(self, x_k: Any, y, Phi):
+        return self._solve(action=0, x_k=x_k, y=y, Phi=Phi)
+
 
     def dps_step(self, x_k: Any, y, Phi):
-        """Apply DPS update for the current estimate.
-
-        x_k is accepted for interface compatibility with iterative dynamics.
-        """
-        _ = x_k
-        return self.dps_solver.solve(y, Phi)
+        return self._solve(action=1, x_k=x_k, y=y, Phi=Phi)
+       
 
     def diffpir_step(self, x_k: Any, y, Phi):
-        """Apply DiffPIR update for the current estimate.
-
-        x_k is accepted for interface compatibility with iterative dynamics.
-        """
-        _ = x_k
-        return self.diffpir_solver.solve(y, Phi)
+        return self._solve(action=2, x_k=x_k, y=y, Phi=Phi)
 
     def apply_action(self, action: int, x_k, y, Phi):
         """Route an action to the corresponding diffusion reconstruction step."""
-        if action == 0:
-            return self.ddnm_step(x_k=x_k, y=y, Phi=Phi)
-        if action == 1:
-            return self.dps_step(x_k=x_k, y=y, Phi=Phi)
-        if action == 2:
-            return self.diffpir_step(x_k=x_k, y=y, Phi=Phi)
-        raise ValueError(f"Invalid action {action}. Expected one of {list(self._action_to_solver)}")
+        self._validate_action(action)
+        return self._solve(action=action, x_k=x_k, y=y, Phi=Phi)
+
 
     @property
     def action_dim(self) -> int:
         """Number of available discrete actions."""
         return len(self._action_to_solver)
+    
+    @property
+    def supports_continuation(self) -> bool:
+        """True only if every solver can continue from x_k instead of restarting from noise."""
+        return all(bool(getattr(solver, "supports_continuation", False)) for solver in self._action_to_solver.values())
+
+    @property
+    def supports_continual_actions(self) -> bool:
+        """Backward-compatible alias used by parts of the environment code."""
+        return self.supports_continuation
+
+    @property
+    def is_contextual_bandit(self) -> bool:
+        """When continuation is not supported, the interaction is contextual bandit (single-step)."""
+        return not self.supports_continuation
+
 
     def get_solver(self, action: int):
         """Return solver associated with action index."""
-        if action not in self._action_to_solver:
-            raise ValueError(f"Invalid action {action}. Expected one of {list(self._action_to_solver)}")
+        self._validate_action(action)
         return self._action_to_solver[action]

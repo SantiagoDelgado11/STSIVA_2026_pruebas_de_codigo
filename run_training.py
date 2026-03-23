@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 import torch
-from torch.utils.data import DataLoader, Dataset
+from torch.utils.data import DataLoader
 from torchvision import transforms
 
 from agents.agent import ReinforceAgent
@@ -111,7 +111,7 @@ def train(args):
     )
 
     agent = ReinforceAgent(
-        state_dim=5,
+        state_dim=state_builder.state_dim,
         action_dim=solver_library.action_dim,
         value_coef=args.value_coef,
         entropy_coef=args.entropy_coef,

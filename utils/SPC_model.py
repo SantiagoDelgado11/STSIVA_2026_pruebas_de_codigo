@@ -1,6 +1,6 @@
+import numpy as np
 import torch
 import torch.nn as nn
-from typing import Optional
 
 from utils.hadamard import hadamard_matrix
 import numpy as np
