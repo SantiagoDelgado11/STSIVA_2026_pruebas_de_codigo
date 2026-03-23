@@ -1,10 +1,7 @@
 from __future__ import annotations
 import argparse
-from operator import add
-import os
 import random
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 import torch
@@ -115,6 +112,7 @@ def train(args):
         action_dim=solver_library.action_dim,
         value_coef=args.value_coef,
         entropy_coef=args.entropy_coef,
+        logit_temperature=args.logit_temperature,
     ).to(device)
 
     trainer = ReinforceTrainer(
@@ -128,6 +126,8 @@ def train(args):
             grad_clip_norm=args.grad_clip_norm,
             checkpoint_dir=args.checkpoint_dir,
             checkpoint_every=args.checkpoint_every,
+            reward_scale=args.reward_scale,
+            returns_norm_momentum=args.returns_norm_momentum,
         ),
         device=device,
     )
@@ -187,12 +187,15 @@ def parse_args():
 
     parser.add_argument("--num_episodes", type=int, default=1000)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--learning_rate", type=float, default=1e-4)
+    parser.add_argument("--learning_rate", type=float, default=5e-5)
     parser.add_argument("--value_coef", type=float, default=0.5)
-    parser.add_argument("--entropy_coef", type=float, default=0.01)
+    parser.add_argument("--entropy_coef", type=float, default=0.03)
+    parser.add_argument("--logit_temperature", type=float, default=1.5)
 
     parser.add_argument("--weight_decay", type=float, default=0.0)
-    parser.add_argument("--grad_clip_norm", type=float, default=1.0)
+    parser.add_argument("--grad_clip_norm", type=float, default=0.5)
+    parser.add_argument("--reward_scale", type=float, default=0.1)
+    parser.add_argument("--returns_norm_momentum", type=float, default=0.99)
     parser.add_argument("--checkpoint_dir", type=str, default="weights/rl_agent")
     parser.add_argument("--checkpoint_every", type=int, default=10)
 

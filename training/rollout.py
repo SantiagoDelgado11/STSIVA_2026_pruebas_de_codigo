@@ -57,14 +57,14 @@ def rollout_episode(
 
         next_state, reward, done, info = env.step(policy_step.action)
 
-        states.append(state.detach().cpu())
+        states.append(state.detach())
         actions.append(policy_step.action)
 
-        log_probs.append(policy_step.log_prob.detach().cpu().squeeze())
+        log_probs.append(policy_step.log_prob.squeeze())
 
-        entropies.append(policy_step.entropy.detach().cpu().squeeze())
+        entropies.append(policy_step.entropy.squeeze())
 
-        values.append(policy_step.value.detach().cpu().squeeze())
+        values.append(policy_step.value.squeeze())
 
         rewards.append(float(reward))
 

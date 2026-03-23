@@ -27,6 +27,6 @@ class PolicyNetwork(nn.Module):
     def forward(self, state: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
         """Return action logits and value estimate for each state."""
         features = self.backbone(state)
-        logits = self.policy_head(features)
+        logits = torch.clamp(self.policy_head(features), -8.0, 8.0)
         value = self.value_head(features).squeeze(-1)
         return logits, value

@@ -28,7 +28,8 @@ class ReinforceAgent(nn.Module):
         action_dim: int = 3,
         value_coef: float = 0.5,
         entropy_coef: float = 0.01,
-        eps_clip: float = 0.2
+        eps_clip: float = 0.2,
+        logit_temperature: float = 1.5,
     ) -> None:
         super().__init__()
         self.network = PolicyNetwork(state_dim=state_dim, action_dim=action_dim)
@@ -36,9 +37,11 @@ class ReinforceAgent(nn.Module):
         self.value_coef = value_coef
         self.entropy_coef = entropy_coef
         self.eps_clip = eps_clip
+        self.logit_temperature = max(float(logit_temperature), 1e-3)
     
     def select_action(self, state: torch.Tensor) -> AgentStep:
         logits, value = self.network(state)
+        logits = logits / self.logit_temperature
         dist = Categorical(logits=logits)
         action = dist.sample()
 
@@ -56,6 +59,7 @@ class ReinforceAgent(nn.Module):
     ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
 
         logits, values = self.network(states)
+        logits = logits / self.logit_temperature
         dist = Categorical(logits=logits)
         log_probs = dist.log_prob(actions)
         entropy = dist.entropy()

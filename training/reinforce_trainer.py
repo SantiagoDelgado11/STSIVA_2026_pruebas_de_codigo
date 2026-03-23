@@ -25,6 +25,8 @@ class ReinforceTrainerConfig:
     normalize_returns: bool = True
     normalize_advantages: bool = True
     max_abs_advantage: float = 5.0
+    reward_scale: float = 0.1
+    returns_norm_momentum: float = 0.99
     eps: float = 1e-8
 
 
@@ -48,6 +50,8 @@ class ReinforceTrainer:
             lr=config.learning_rate,
             weight_decay=config.weight_decay,
         )
+        self._running_return_mean = 0.0
+        self._running_return_var = 1.0
         Path(config.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
     def _save_checkpoint(self, episode: int) -> None:
@@ -72,6 +76,18 @@ class ReinforceTrainer:
         normalized = self._normalize(advantages)
         return torch.clamp(normalized, -self.config.max_abs_advantage, self.config.max_abs_advantage)
 
+    def _normalize_returns_online(self, returns: torch.Tensor) -> torch.Tensor:
+        mean = returns.mean().item()
+        var = returns.var(unbiased=False).item() if returns.numel() > 1 else 0.0
+
+        m = self.config.returns_norm_momentum
+        self._running_return_mean = m * self._running_return_mean + (1.0 - m) * mean
+        self._running_return_var = m * self._running_return_var + (1.0 - m) * max(var, self.config.eps)
+
+        denom = (self._running_return_var ** 0.5) + self.config.eps
+        normalized = (returns - self._running_return_mean) / denom
+        return torch.clamp(normalized, -self.config.max_abs_advantage, self.config.max_abs_advantage)
+
     def train(self, episode_sampler) -> list[dict[str, float]]:
         self.agent.train()
         logs: list[dict[str, float]] = []
@@ -90,12 +106,9 @@ class ReinforceTrainer:
             states = torch.stack(trajectory.states).to(self.device)
             actions = torch.tensor(trajectory.actions, dtype=torch.long, device=self.device)
 
-            old_log_probs = torch.stack(trajectory.log_probs).to(self.device)
-            _ = old_log_probs
-
-            targets = returns
+            targets = returns * self.config.reward_scale
             if self.config.normalize_returns:
-                targets = self._normalize(targets)
+                targets = self._normalize_returns_online(targets)
 
 
             log_probs, entropies, values = self.agent.evaluate_actions(
@@ -142,6 +155,8 @@ class ReinforceTrainer:
                 "ratio_mean": 1.0,
                 "grad_norm": float(grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm),
                 "bandit_mode": float(bool(info.get("bandit_mode", False))),
+                "running_return_mean": float(self._running_return_mean),
+                "running_return_std": float((self._running_return_var ** 0.5)),
 
             }
             logs.append(episode_log)
