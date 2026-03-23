@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import torch
+import torch.nn.functional as F
 from torch import optim
 
 from agents.agent import ReinforceAgent
@@ -17,16 +18,22 @@ class ReinforceTrainerConfig:
 
     num_episodes: int = 100
     gamma: float = 1.0
-    learning_rate: float = 1e-4
+    learning_rate: float = 2e-5
     weight_decay: float = 0.0
-    grad_clip_norm: float = 1.0
+    grad_clip_norm: float = 0.3
+    grad_explosion_threshold: float = 5.0
     checkpoint_dir: str = "weights/rl_solver_selector"
     checkpoint_every: int = 50
     normalize_returns: bool = True
     normalize_advantages: bool = True
-    max_abs_advantage: float = 5.0
-    reward_scale: float = 0.1
+    max_abs_advantage: float = 2.5
+    reward_scale: float = 1.0
     returns_norm_momentum: float = 0.99
+    reward_norm_momentum: float = 0.99
+    reward_center: float = 8.0
+    reward_temperature: float = 2.0
+    critic_loss_type: str = "smooth_l1"
+    huber_beta: float = 0.5
     eps: float = 1e-8
 
 
@@ -50,6 +57,8 @@ class ReinforceTrainer:
             lr=config.learning_rate,
             weight_decay=config.weight_decay,
         )
+        self._running_reward_mean = float(config.reward_center)
+        self._running_reward_var = float(config.reward_temperature ** 2)
         self._running_return_mean = 0.0
         self._running_return_var = 1.0
         Path(config.checkpoint_dir).mkdir(parents=True, exist_ok=True)
@@ -75,6 +84,22 @@ class ReinforceTrainer:
     def _normalize_advantages(self, advantages: torch.Tensor) -> torch.Tensor:
         normalized = self._normalize(advantages)
         return torch.clamp(normalized, -self.config.max_abs_advantage, self.config.max_abs_advantage)
+
+    def _normalize_rewards(self, rewards: torch.Tensor) -> torch.Tensor:
+        if rewards.numel() == 0:
+            return rewards
+
+        mean = rewards.mean().item()
+        var = rewards.var(unbiased=False).item() if rewards.numel() > 1 else 0.0
+
+        m = self.config.reward_norm_momentum
+        self._running_reward_mean = m * self._running_reward_mean + (1.0 - m) * mean
+        self._running_reward_var = m * self._running_reward_var + (1.0 - m) * max(var, self.config.eps)
+
+        std = (self._running_reward_var ** 0.5) + self.config.eps
+        z = (rewards - self._running_reward_mean) / std
+        # Keep reward signal bounded to avoid critic target outliers.
+        return torch.tanh(z / max(self.config.reward_temperature, self.config.eps))
 
     def _normalize_returns_online(self, returns: torch.Tensor) -> torch.Tensor:
         mean = returns.mean().item()
@@ -106,7 +131,9 @@ class ReinforceTrainer:
             states = torch.stack(trajectory.states).to(self.device)
             actions = torch.tensor(trajectory.actions, dtype=torch.long, device=self.device)
 
-            targets = returns * self.config.reward_scale
+            rewards_tensor = torch.tensor(trajectory.rewards, dtype=torch.float32, device=self.device)
+            normalized_rewards = self._normalize_rewards(rewards_tensor) * self.config.reward_scale
+            targets = normalized_rewards
             if self.config.normalize_returns:
                 targets = self._normalize_returns_online(targets)
 
@@ -124,7 +151,10 @@ class ReinforceTrainer:
 
             # REINFORCE objective with standardized advantages before multiplying by log_prob.
             policy_loss = -(log_probs * advantages).mean()
-            value_loss = torch.mean((values - targets) ** 2)
+            if self.config.critic_loss_type == "smooth_l1":
+                value_loss = F.smooth_l1_loss(values, targets, beta=self.config.huber_beta)
+            else:
+                value_loss = torch.mean((values - targets) ** 2)
             entropy_bonus = entropies.mean()
             loss = policy_loss + self.agent.value_coef * value_loss - self.agent.entropy_coef * entropy_bonus
 
@@ -133,10 +163,13 @@ class ReinforceTrainer:
 
             self.optimizer.zero_grad(set_to_none=True)
             loss.backward()
-            grad_norm = torch.nn.utils.clip_grad_norm_(
+            grad_norm_preclip = torch.nn.utils.clip_grad_norm_(
                 self.agent.parameters(),
                 self.config.grad_clip_norm,
+                error_if_nonfinite=False,
             )
+            grad_norm_value = float(grad_norm_preclip.item() if isinstance(grad_norm_preclip, torch.Tensor) else grad_norm_preclip)
+            grad_exploded = grad_norm_value > self.config.grad_explosion_threshold
 
             self.optimizer.step()
 
@@ -153,10 +186,14 @@ class ReinforceTrainer:
                 "advantage_mean": float(advantages.mean().item()),
                 "returns_mean": float(targets.mean().item()),
                 "ratio_mean": 1.0,
-                "grad_norm": float(grad_norm.item() if isinstance(grad_norm, torch.Tensor) else grad_norm),
+                "grad_norm": grad_norm_value,
+                "grad_clipped_to": float(self.config.grad_clip_norm),
+                "grad_exploded": float(grad_exploded),
                 "bandit_mode": float(bool(info.get("bandit_mode", False))),
                 "running_return_mean": float(self._running_return_mean),
                 "running_return_std": float((self._running_return_var ** 0.5)),
+                "running_reward_mean": float(self._running_reward_mean),
+                "running_reward_std": float((self._running_reward_var ** 0.5)),
 
             }
             logs.append(episode_log)

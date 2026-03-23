@@ -124,10 +124,16 @@ def train(args):
             learning_rate=args.learning_rate,
             weight_decay=args.weight_decay,
             grad_clip_norm=args.grad_clip_norm,
+            grad_explosion_threshold=args.grad_explosion_threshold,
             checkpoint_dir=args.checkpoint_dir,
             checkpoint_every=args.checkpoint_every,
             reward_scale=args.reward_scale,
             returns_norm_momentum=args.returns_norm_momentum,
+            reward_norm_momentum=args.reward_norm_momentum,
+            reward_center=args.reward_center,
+            reward_temperature=args.reward_temperature,
+            critic_loss_type=args.critic_loss_type,
+            huber_beta=args.huber_beta,
         ),
         device=device,
     )
@@ -187,15 +193,21 @@ def parse_args():
 
     parser.add_argument("--num_episodes", type=int, default=1000)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--learning_rate", type=float, default=5e-5)
+    parser.add_argument("--learning_rate", type=float, default=2e-5)
     parser.add_argument("--value_coef", type=float, default=0.5)
     parser.add_argument("--entropy_coef", type=float, default=0.03)
     parser.add_argument("--logit_temperature", type=float, default=1.5)
 
     parser.add_argument("--weight_decay", type=float, default=0.0)
-    parser.add_argument("--grad_clip_norm", type=float, default=0.5)
-    parser.add_argument("--reward_scale", type=float, default=0.1)
+    parser.add_argument("--grad_clip_norm", type=float, default=0.3)
+    parser.add_argument("--grad_explosion_threshold", type=float, default=5.0)
+    parser.add_argument("--reward_scale", type=float, default=1.0)
     parser.add_argument("--returns_norm_momentum", type=float, default=0.99)
+    parser.add_argument("--reward_norm_momentum", type=float, default=0.99)
+    parser.add_argument("--reward_center", type=float, default=8.0)
+    parser.add_argument("--reward_temperature", type=float, default=2.0)
+    parser.add_argument("--critic_loss_type", type=str, default="smooth_l1", choices=["smooth_l1", "mse"])
+    parser.add_argument("--huber_beta", type=float, default=0.5)
     parser.add_argument("--checkpoint_dir", type=str, default="weights/rl_agent")
     parser.add_argument("--checkpoint_every", type=int, default=10)
 
