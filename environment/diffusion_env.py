@@ -242,7 +242,6 @@ class DiffusionSolverEnv:
         if psnr_real == max(psnr_all):
             reward += 1.0
         else:
-            reward = psnr_component
             reward -= 1.0
 
         print(f"PSNRs: {psnr_all}, Action: {action}, Reward: {reward:.3f}")
