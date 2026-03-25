@@ -59,7 +59,7 @@ class DiffPIRSolver:
 
         self._context = kwargs
 
-def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H, **kwargs) -> torch.Tensor:
+    def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H, **kwargs) -> torch.Tensor:
         _ = x_k
 
         with torch.no_grad():

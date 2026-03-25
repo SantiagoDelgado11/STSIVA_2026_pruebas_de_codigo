@@ -110,6 +110,7 @@ class DiffusionSolverEnv:
 
         self.iteration = 0
         self.previous_action: int = 0
+        self.baseline_action: int = 1  
         self.current_sample: EpisodeSample | None = None
         self.y: torch.Tensor | None = None
         self.x_current: torch.Tensor | None = None
@@ -147,21 +148,12 @@ class DiffusionSolverEnv:
         self,
         psnr_db: float,
     ) -> float:
-        """Min-max normalized PSNR with explicit saturation bounds.
-
-        1) Saturate to [psnr_norm_min_db, psnr_norm_max_db]
-        2) Min-max map to [0, 1]
-        3) Optionally map to [-1, 1]
-        """
+        """Stable PSNR normalization that avoids constant/saturated signals."""
         if not math.isfinite(psnr_db):
-            clipped = self.psnr_norm_min_db
-        else:
-            clipped = max(min(psnr_db, self.psnr_norm_max_db), self.psnr_norm_min_db)
+            return -1.0    
 
-        unit = (clipped - self.psnr_norm_min_db) / (self.psnr_norm_max_db - self.psnr_norm_min_db)
-        if self.psnr_norm_target_range == "zero_to_one":
-            return float(unit)
-        return float((2.0 * unit) - 1.0)
+        scaled = (psnr_db - 10.0) / 20.0
+        return float(math.tanh(scaled))
 
     def _build_measurement(self, x_true_model: torch.Tensor, H: Any, noise_std: float) -> torch.Tensor:
         x_true_unit = self._model_to_unit(x_true_model)
@@ -232,10 +224,33 @@ class DiffusionSolverEnv:
         psnr_component = self._normalize_psnr(psnr_real)
         ssim_component = max(min((2.0 * ssim) - 1.0, 1.0), -1.0)
 
-        if self.use_ssim_in_reward:
-            reward = (self.psnr_reward_weight * psnr_component) + (self.ssim_reward_weight * ssim_component)
+        psnr_baseline = None
+        if self.baseline_action in range(self.solver_library.action_dim):
+            baseline_solver = self.solver_library.get_solver(self.baseline_action)
+            baseline_solver.set_context(
+                x_true=None,
+                x_init=x_prev,
+                iteration=self.iteration,
+                max_iterations=self.max_steps,
+                bandit_mode=self.bandit_mode,
+            )
+            x_baseline = self.solver_library.apply_action(
+                action=self.baseline_action,
+                x_k=x_prev,
+                y=self.y.to(self.device),
+                Phi=self.operator_model_domain,
+                ground_truth=self.current_sample.x_true.to(self.device),
+            )
+            x_baseline = torch.clamp(x_baseline.detach(), -1.0, 1.0)
+            x_baseline_unit = self._model_to_unit(x_baseline)
+            psnr_baseline = self._psnr_db_unit(x_baseline_unit, x_true_unit)
+
+        if psnr_baseline is None:
+            reward_raw = psnr_real
+
         else:
-            reward = psnr_component
+            reward_raw = psnr_real - psnr_baseline
+        reward = reward_raw / 10.0
 
         # Consistency is computed against physical-domain measurements [0, 1].
         residual = self.current_sample.H.forward_pass(x_hat_unit) - self.y
@@ -258,11 +273,14 @@ class DiffusionSolverEnv:
         info = {
             "solver": solver.name,
             "reward": reward,
+            "reward_raw": reward_raw,
             "psnr": psnr_real,
+            "psnr_baseline": psnr_baseline,
             "psnr_component": psnr_component,
             "ssim": ssim,
             "ssim_component": ssim_component,
             "consistency_mse": consistency,
             "bandit_mode": self.bandit_mode,
         }
+        print(f"PSNR: {psnr_real:.3f}, Reward: {reward:.3f}")
         return next_state, reward, done, info

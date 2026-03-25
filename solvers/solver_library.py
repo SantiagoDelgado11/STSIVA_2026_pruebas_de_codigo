@@ -23,6 +23,13 @@ class SolverLibrary:
             1: self.dps_solver,
             2: self.diffpir_solver,
         }
+        for action, solver in self._action_to_solver.items():
+            if not callable(getattr(solver, "solve", None)):
+                raise TypeError(
+                    f"Solver mapped to action {action} ({type(solver).__name__}) "
+                    "must implement a callable `solve` method."
+                )
+
 
     def _validate_action(self, action: int) -> None:
         if action not in self._action_to_solver:

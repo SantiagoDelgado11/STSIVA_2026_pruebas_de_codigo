@@ -47,6 +47,6 @@ class DDNMSolver:
             y = y.to(self.device),
             pseudo_inverse=H.transpose_pass,
             forward_pass=H.forward_pass,
-            ground_truth=ground_truth,
+            ground_truth=ground_truth   ,
             track_metrics=False,
         )

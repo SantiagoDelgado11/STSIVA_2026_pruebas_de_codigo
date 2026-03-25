@@ -139,11 +139,16 @@ class ReinforceTrainer:
             rewards = torch.tensor(trajectory.rewards, dtype=torch.float32, device=self.device)
             dones = torch.tensor(trajectory.dones, dtype=torch.float32, device=self.device)
 
-            advantages, returns_gae = self._compute_gae(
-                rewards=rewards,
-                values=old_values,
-                dones=dones,
-            )
+            bandit_mode = bool(info.get("bandit_mode", False))
+            if bandit_mode:
+                returns_gae = rewards
+                advantages = rewards - old_values
+            else:
+                advantages, returns_gae = self._compute_gae(
+                    rewards=rewards,
+                    values=old_values,
+                    dones=dones,
+                )
 
             psnr_norm = float(info.get("psnr_component", 0.0))
             if self.config.psnr_norm_aux_weight > 0.0:
@@ -236,7 +241,7 @@ class ReinforceTrainer:
                 "grad_norm": grad_norm_value,
                 "grad_clipped_to": float(self.config.grad_clip_norm),
                 "grad_exploded": float(grad_exploded),
-                "bandit_mode": float(bool(info.get("bandit_mode", False))),
+                "bandit_mode": float(bandit_mode),
                 "running_return_mean": float(self._running_return_mean),
                 "running_return_std": float((self._running_return_var ** 0.5)),
 
