@@ -40,13 +40,13 @@ class DDNMSolver:
     def set_context(self, **kwargs: Any) -> None:
         self._context = kwargs
 
-    def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H) -> torch.Tensor:
+    def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H, ground_truth = None) -> torch.Tensor:
         _ = x_k
         return self.solver.sample(
             model=self.model,
             y = y.to(self.device),
             pseudo_inverse=H.transpose_pass,
             forward_pass=H.forward_pass,
-            ground_truth=None,
+            ground_truth=ground_truth,
             track_metrics=False,
         )

@@ -28,10 +28,10 @@ class SolverLibrary:
         if action not in self._action_to_solver:
             raise ValueError(f"Invalid action {action}. Expected one of {list(self._action_to_solver)}")
 
-    def _solve(self, action: int, x_k: Any, y, Phi):
+    def _solve(self, action: int, x_k: Any, y, Phi, ground_truth = None):
         solver = self.get_solver(action)
-        return solver.solve(x_k=x_k, y=y, H=Phi)
-    
+        return solver.solve(x_k=x_k, y=y, H=Phi, ground_truth=ground_truth)
+ 
 
     def ddnm_step(self, x_k: Any, y, Phi):
         return self._solve(action=0, x_k=x_k, y=y, Phi=Phi)
@@ -44,10 +44,10 @@ class SolverLibrary:
     def diffpir_step(self, x_k: Any, y, Phi):
         return self._solve(action=2, x_k=x_k, y=y, Phi=Phi)
 
-    def apply_action(self, action: int, x_k, y, Phi):
+    def apply_action(self, action: int, x_k, y, Phi, ground_truth = None):
         """Route an action to the corresponding diffusion reconstruction step."""
         self._validate_action(action)
-        return self._solve(action=action, x_k=x_k, y=y, Phi=Phi)
+        return self._solve(action=action, x_k=x_k, y=y, Phi=Phi, ground_truth=ground_truth) 
 
 
     @property
