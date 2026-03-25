@@ -44,7 +44,7 @@ class DPSSolver:
         """Store optional contextual information for compatibility."""
         self._context = kwargs
 
-    def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H) -> torch.Tensor:
+    def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H, **kwargs) -> torch.Tensor:
         _ = x_k
         return self.solver.sample(
             model=self.model,

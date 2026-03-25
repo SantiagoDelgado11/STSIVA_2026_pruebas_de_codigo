@@ -216,7 +216,7 @@ class DiffusionSolverEnv:
             x_k=x_prev,
             y=self.y.to(self.device),
             Phi=self.operator_model_domain,
-            ground_truth=self.ground_truth
+            ground_truth=self.current_sample.x_true.to(self.device) 
         )
 
         self.x_previous = x_prev
