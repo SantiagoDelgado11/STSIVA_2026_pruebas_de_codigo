@@ -72,6 +72,9 @@ class DiffusionSolverEnv:
         state_builder: StateBuilder,
         max_steps: int = 5,
         device: str | torch.device = "cuda",
+        psnr_reward_weight: float = 0.7,
+        ssim_reward_weight: float = 0.3,
+        use_ssim_in_reward: bool = True,
         args=None,
     ) -> None:
         self.solver_library = solver_library
@@ -89,6 +92,10 @@ class DiffusionSolverEnv:
         # If solvers cannot continue from x_k, the interaction is a contextual bandit.
         self.bandit_mode = forced_bandit_mode or self.solver_library.is_contextual_bandit
         self.max_steps = 1 if self.bandit_mode else max(1, requested_max_steps)
+
+        self.psnr_reward_weight = float(psnr_reward_weight)
+        self.ssim_reward_weight = float(ssim_reward_weight)
+        self.use_ssim_in_reward = bool(use_ssim_in_reward)
 
         self.iteration = 0
         self.previous_action: int = 0
@@ -124,6 +131,14 @@ class DiffusionSolverEnv:
         numerator = (2.0 * mean_pred * mean_target + c1) * (2.0 * covar + c2)
         denominator = (mean_pred ** 2 + mean_target ** 2 + c1) * (var_pred + var_target + c2)
         return float(numerator / (denominator + 1e-8))
+
+    @staticmethod
+    def _normalize_psnr(psnr_db: float) -> float:
+        # Map typical PSNR ranges to a bounded scale for stable reward mixing.
+        if not math.isfinite(psnr_db):
+            return 1.0
+        psnr_db = max(min(psnr_db, 80.0), -20.0)
+        return float(math.tanh((psnr_db - 20.0) / 10.0))
 
     def _build_measurement(self, x_true_model: torch.Tensor, H: Any, noise_std: float) -> torch.Tensor:
         x_true_unit = self._model_to_unit(x_true_model)
@@ -165,7 +180,7 @@ class DiffusionSolverEnv:
 
         solver = self.solver_library.get_solver(action)
         solver.set_context(
-            x_true=self.current_sample.x_true,
+            x_true=None,
             x_init=self.x_current,
             iteration=self.iteration,
             max_iterations=self.max_steps,
@@ -187,9 +202,16 @@ class DiffusionSolverEnv:
         x_hat_unit = self._model_to_unit(self.x_current)
         x_true_unit = self._model_to_unit(self.current_sample.x_true.to(self.device))
 
-        reward = self._psnr_db_unit(x_hat_unit, x_true_unit)
-        psnr_real = reward
+        psnr_real = self._psnr_db_unit(x_hat_unit, x_true_unit)
         ssim = self._ssim_unit(x_hat_unit, x_true_unit)
+
+        psnr_component = self._normalize_psnr(psnr_real)
+        ssim_component = max(min((2.0 * ssim) - 1.0, 1.0), -1.0)
+
+        if self.use_ssim_in_reward:
+            reward = (self.psnr_reward_weight * psnr_component) + (self.ssim_reward_weight * ssim_component)
+        else:
+            reward = psnr_component
 
         # Consistency is computed against physical-domain measurements [0, 1].
         residual = self.current_sample.H.forward_pass(x_hat_unit) - self.y
@@ -211,9 +233,11 @@ class DiffusionSolverEnv:
 
         info = {
             "solver": solver.name,
-            "psnr": reward,
-            "psnr_db": psnr_real,
+            "reward": reward,
+            "psnr": psnr_real,
+            "psnr_component": psnr_component,
             "ssim": ssim,
+            "ssim_component": ssim_component,
             "consistency_mse": consistency,
             "bandit_mode": self.bandit_mode,
         }

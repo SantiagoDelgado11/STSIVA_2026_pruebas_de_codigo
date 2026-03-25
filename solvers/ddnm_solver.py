@@ -42,12 +42,11 @@ class DDNMSolver:
 
     def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H) -> torch.Tensor:
         _ = x_k
-        x_true = self._context.get("x_true", None)
         return self.solver.sample(
             model=self.model,
             y = y.to(self.device),
             pseudo_inverse=H.transpose_pass,
             forward_pass=H.forward_pass,
-            ground_truth=x_true,
+            ground_truth=None,
             track_metrics=False,
         )

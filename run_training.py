@@ -105,6 +105,9 @@ def train(args):
         state_builder=state_builder,
         max_steps=args.max_env_steps,
         device=device,
+        psnr_reward_weight=args.reward_psnr_weight,
+        ssim_reward_weight=args.reward_ssim_weight,
+        use_ssim_in_reward=args.use_ssim_in_reward,
     )
 
     agent = ReinforceAgent(
@@ -127,11 +130,8 @@ def train(args):
             grad_explosion_threshold=args.grad_explosion_threshold,
             checkpoint_dir=args.checkpoint_dir,
             checkpoint_every=args.checkpoint_every,
-            reward_scale=args.reward_scale,
             returns_norm_momentum=args.returns_norm_momentum,
-            reward_norm_momentum=args.reward_norm_momentum,
-            reward_center=args.reward_center,
-            reward_temperature=args.reward_temperature,
+            psnr_norm_aux_weight=args.psnr_norm_aux_weight,
             critic_loss_type=args.critic_loss_type,
             huber_beta=args.huber_beta,
             ppo_clip_eps=args.ppo_clip_eps,
@@ -172,8 +172,12 @@ def train(args):
     rewards = [entry["reward"] for entry in logs]
     print("Training finished.")
     print(f"Episodes: {len(logs)}")
-    print(f"Average Reward: {np.mean(rewards):.4f}")
-    print(f"Best Reward: {np.max(rewards):.4f}")
+    if rewards:
+        print(f"Average Reward: {np.mean(rewards):.4f}")
+        print(f"Best Reward: {np.max(rewards):.4f}")
+    else:
+        print("Average Reward: n/a (no valid episodes logged)")
+        print("Best Reward: n/a (no valid episodes logged)")
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train RL-based diffusion solver selector.")
@@ -203,11 +207,8 @@ def parse_args():
     parser.add_argument("--weight_decay", type=float, default=0.0)
     parser.add_argument("--grad_clip_norm", type=float, default=0.3)
     parser.add_argument("--grad_explosion_threshold", type=float, default=5.0)
-    parser.add_argument("--reward_scale", type=float, default=1.0)
     parser.add_argument("--returns_norm_momentum", type=float, default=0.99)
-    parser.add_argument("--reward_norm_momentum", type=float, default=0.99)
-    parser.add_argument("--reward_center", type=float, default=8.0)
-    parser.add_argument("--reward_temperature", type=float, default=2.0)
+    parser.add_argument("--psnr_norm_aux_weight", type=float, default=0.2)
     parser.add_argument("--critic_loss_type", type=str, default="smooth_l1", choices=["smooth_l1", "mse"])
     parser.add_argument("--huber_beta", type=float, default=0.5)
     parser.add_argument("--ppo_clip_eps", type=float, default=0.2)
@@ -219,6 +220,14 @@ def parse_args():
     parser.add_argument("--sampling_ratio", type=float, default=0.1)
     parser.add_argument("--sampling_method", type=str, default="gaussian")
     parser.add_argument("--measurement_noise_std", type=float, default=0.0)
+    parser.add_argument("--reward_psnr_weight", type=float, default=0.7)
+    parser.add_argument("--reward_ssim_weight", type=float, default=0.3)
+    parser.add_argument(
+        "--use_ssim_in_reward",
+        type=lambda x: str(x).lower() in ["1", "true", "yes", "y"],
+        default=True,
+        help="If false, reward uses only PSNR component.",
+    )
 
     parser.add_argument("--diffpir_steps", type=int, default=50)
     parser.add_argument("--dps_steps", type=int, default=50)

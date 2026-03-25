@@ -27,11 +27,8 @@ class ReinforceTrainerConfig:
     normalize_returns: bool = True
     normalize_advantages: bool = True
     max_abs_advantage: float = 2.5
-    reward_scale: float = 1.0
     returns_norm_momentum: float = 0.99
-    reward_norm_momentum: float = 0.99
-    reward_center: float = 8.0
-    reward_temperature: float = 2.0
+    psnr_norm_aux_weight: float = 0.2
     critic_loss_type: str = "smooth_l1"
     huber_beta: float = 0.5
     ppo_clip_eps: float = 0.2
@@ -59,8 +56,6 @@ class ReinforceTrainer:
             lr=config.learning_rate,
             weight_decay=config.weight_decay,
         )
-        self._running_reward_mean = float(config.reward_center)
-        self._running_reward_var = float(config.reward_temperature ** 2)
         self._running_return_mean = 0.0
         self._running_return_var = 1.0
         Path(config.checkpoint_dir).mkdir(parents=True, exist_ok=True)
@@ -86,22 +81,6 @@ class ReinforceTrainer:
     def _normalize_advantages(self, advantages: torch.Tensor) -> torch.Tensor:
         normalized = self._normalize(advantages)
         return torch.clamp(normalized, -self.config.max_abs_advantage, self.config.max_abs_advantage)
-
-    def _normalize_rewards(self, rewards: torch.Tensor) -> torch.Tensor:
-        if rewards.numel() == 0:
-            return rewards
-
-        mean = rewards.mean().item()
-        var = rewards.var(unbiased=False).item() if rewards.numel() > 1 else 0.0
-
-        m = self.config.reward_norm_momentum
-        self._running_reward_mean = m * self._running_reward_mean + (1.0 - m) * mean
-        self._running_reward_var = m * self._running_reward_var + (1.0 - m) * max(var, self.config.eps)
-
-        std = (self._running_reward_var ** 0.5) + self.config.eps
-        z = (rewards - self._running_reward_mean) / std
-        # Keep reward signal bounded to avoid critic target outliers.
-        return torch.tanh(z / max(self.config.reward_temperature, self.config.eps))
 
     def _normalize_returns_online(self, returns: torch.Tensor) -> torch.Tensor:
         mean = returns.mean().item()
@@ -134,8 +113,13 @@ class ReinforceTrainer:
             actions = torch.tensor(trajectory.actions, dtype=torch.long, device=self.device)
             old_log_probs = torch.stack(trajectory.log_probs).to(self.device).view(-1).detach()
             old_values = torch.stack(trajectory.values).to(self.device).view(-1).detach()
+            psnr_norm = float(info.get("psnr_component", 0.0))
+            psnr_norm_tensor = torch.full_like(returns, psnr_norm)
 
             targets = returns
+            if self.config.psnr_norm_aux_weight > 0.0:
+                # Auxiliary signal: normalized PSNR contributes directly to PPO targets.
+                targets = targets + (self.config.psnr_norm_aux_weight * psnr_norm_tensor)
             if self.config.normalize_returns:
                 targets = self._normalize_returns_online(targets)
 
@@ -197,6 +181,7 @@ class ReinforceTrainer:
                 "selected_action": float(trajectory.actions[-1]),
                 "selected_solver": float(["DDNM", "DPS", "DiffPIR"].index(info["solver"])),
                 "psnr": float(info["psnr"]),
+                "psnr_norm": float(psnr_norm),
                 "loss_total": float(loss.item()),
                 "loss_policy": float(policy_loss.item()),
                 "loss_value": float(value_loss.item()),
@@ -210,8 +195,6 @@ class ReinforceTrainer:
                 "bandit_mode": float(bool(info.get("bandit_mode", False))),
                 "running_return_mean": float(self._running_return_mean),
                 "running_return_std": float((self._running_return_var ** 0.5)),
-                "running_reward_mean": float(self._running_reward_mean),
-                "running_reward_std": float((self._running_reward_var ** 0.5)),
 
             }
             logs.append(episode_log)
@@ -222,6 +205,7 @@ class ReinforceTrainer:
                     f"reward={episode_log['reward']:.3f} "
                     f"solver={info['solver']} "
                     f"psnr={episode_log['psnr']:.3f} "
+                    f"psnr_norm={episode_log['psnr_norm']:.3f} "
                     f"loss={episode_log['loss_total']:.4f} "
                     f"grad_norm={episode_log['grad_norm']:.4f}"
                 )
