@@ -134,6 +134,8 @@ def train(args):
             reward_temperature=args.reward_temperature,
             critic_loss_type=args.critic_loss_type,
             huber_beta=args.huber_beta,
+            ppo_clip_eps=args.ppo_clip_eps,
+            ppo_update_epochs=args.ppo_update_epochs,
         ),
         device=device,
     )
@@ -191,7 +193,7 @@ def parse_args():
     parser.add_argument("--num_channels", type=int, default=64)
     parser.add_argument("--num_res_blocks", type=int, default=3)
 
-    parser.add_argument("--num_episodes", type=int, default=1000)
+    parser.add_argument("--num_episodes", type=int, default=5000)
     parser.add_argument("--gamma", type=float, default=0.99)
     parser.add_argument("--learning_rate", type=float, default=2e-5)
     parser.add_argument("--value_coef", type=float, default=0.5)
@@ -208,8 +210,10 @@ def parse_args():
     parser.add_argument("--reward_temperature", type=float, default=2.0)
     parser.add_argument("--critic_loss_type", type=str, default="smooth_l1", choices=["smooth_l1", "mse"])
     parser.add_argument("--huber_beta", type=float, default=0.5)
+    parser.add_argument("--ppo_clip_eps", type=float, default=0.2)
+    parser.add_argument("--ppo_update_epochs", type=int, default=4)
     parser.add_argument("--checkpoint_dir", type=str, default="weights/rl_agent")
-    parser.add_argument("--checkpoint_every", type=int, default=10)
+    parser.add_argument("--checkpoint_every", type=int, default=100)
 
     parser.add_argument("--max_env_steps", type=int, default=1)
     parser.add_argument("--sampling_ratio", type=float, default=0.1)

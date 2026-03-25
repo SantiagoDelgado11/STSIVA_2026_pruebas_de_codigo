@@ -14,16 +14,16 @@ from training.rollout import rollout_episode
 
 @dataclass
 class ReinforceTrainerConfig:
-    """Configuration for REINFORCE training."""
+    """Configuration for policy-gradient training (PPO-style updates)."""
 
-    num_episodes: int = 100
+    num_episodes: int = 5000
     gamma: float = 1.0
     learning_rate: float = 2e-5
     weight_decay: float = 0.0
     grad_clip_norm: float = 0.3
     grad_explosion_threshold: float = 5.0
     checkpoint_dir: str = "weights/rl_solver_selector"
-    checkpoint_every: int = 50
+    checkpoint_every: int = 100
     normalize_returns: bool = True
     normalize_advantages: bool = True
     max_abs_advantage: float = 2.5
@@ -34,11 +34,13 @@ class ReinforceTrainerConfig:
     reward_temperature: float = 2.0
     critic_loss_type: str = "smooth_l1"
     huber_beta: float = 0.5
+    ppo_clip_eps: float = 0.2
+    ppo_update_epochs: int = 4
     eps: float = 1e-8
 
 
 class ReinforceTrainer:
-    """Trainer that optimizes policy and value heads jointly."""
+    """Trainer that optimizes policy and value heads jointly with PPO."""
 
     def __init__(
         self,
@@ -130,48 +132,64 @@ class ReinforceTrainer:
 
             states = torch.stack(trajectory.states).to(self.device)
             actions = torch.tensor(trajectory.actions, dtype=torch.long, device=self.device)
+            old_log_probs = torch.stack(trajectory.log_probs).to(self.device).view(-1).detach()
+            old_values = torch.stack(trajectory.values).to(self.device).view(-1).detach()
 
-            rewards_tensor = torch.tensor(trajectory.rewards, dtype=torch.float32, device=self.device)
-            normalized_rewards = self._normalize_rewards(rewards_tensor) * self.config.reward_scale
-            targets = normalized_rewards
+            targets = returns
             if self.config.normalize_returns:
                 targets = self._normalize_returns_online(targets)
 
-
-            log_probs, entropies, values = self.agent.evaluate_actions(
-                states=states,
-                actions=actions,
-            )
-
-            values = values.squeeze(-1)
-
-            advantages = targets - values.detach()
+            advantages = (targets - old_values).detach()
             if self.config.normalize_advantages:
                 advantages = self._normalize_advantages(advantages)
+            ratio_mean = 1.0
+            grad_norm_value = 0.0
+            grad_exploded = False
 
-            # REINFORCE objective with standardized advantages before multiplying by log_prob.
-            policy_loss = -(log_probs * advantages).mean()
-            if self.config.critic_loss_type == "smooth_l1":
-                value_loss = F.smooth_l1_loss(values, targets, beta=self.config.huber_beta)
-            else:
-                value_loss = torch.mean((values - targets) ** 2)
-            entropy_bonus = entropies.mean()
-            loss = policy_loss + self.agent.value_coef * value_loss - self.agent.entropy_coef * entropy_bonus
+            for _ in range(max(1, int(self.config.ppo_update_epochs))):
+                log_probs, entropies, values = self.agent.evaluate_actions(
+                    states=states,
+                    actions=actions,
+                )
+                values = values.view(-1)
 
-            if not torch.isfinite(loss):
+                ratios = torch.exp(log_probs - old_log_probs)
+                clipped_ratios = torch.clamp(
+                    ratios,
+                    1.0 - self.config.ppo_clip_eps,
+                    1.0 + self.config.ppo_clip_eps,
+                )
+                surrogate_1 = ratios * advantages
+                surrogate_2 = clipped_ratios * advantages
+                policy_loss = -torch.min(surrogate_1, surrogate_2).mean()
+
+                if self.config.critic_loss_type == "smooth_l1":
+                    value_loss = F.smooth_l1_loss(values.view(-1), targets.view(-1), beta=self.config.huber_beta)
+                else:
+                    value_loss = torch.mean((values - targets) ** 2)
+
+                entropy_bonus = entropies.mean()
+                loss = policy_loss + self.agent.value_coef * value_loss - self.agent.entropy_coef * entropy_bonus
+
+                if not torch.isfinite(loss):
+                    break
+
+                self.optimizer.zero_grad(set_to_none=True)
+                loss.backward()
+                grad_norm_preclip = torch.nn.utils.clip_grad_norm_(
+                    self.agent.parameters(),
+                    self.config.grad_clip_norm,
+                    error_if_nonfinite=False,
+                )
+                grad_norm_value = float(
+                    grad_norm_preclip.item() if isinstance(grad_norm_preclip, torch.Tensor) else grad_norm_preclip
+                )
+                grad_exploded = grad_norm_value > self.config.grad_explosion_threshold
+                self.optimizer.step()
+                ratio_mean = float(ratios.mean().item())
+
+            if not torch.isfinite(torch.tensor(loss.item(), device=self.device)):
                 continue
-
-            self.optimizer.zero_grad(set_to_none=True)
-            loss.backward()
-            grad_norm_preclip = torch.nn.utils.clip_grad_norm_(
-                self.agent.parameters(),
-                self.config.grad_clip_norm,
-                error_if_nonfinite=False,
-            )
-            grad_norm_value = float(grad_norm_preclip.item() if isinstance(grad_norm_preclip, torch.Tensor) else grad_norm_preclip)
-            grad_exploded = grad_norm_value > self.config.grad_explosion_threshold
-
-            self.optimizer.step()
 
             episode_log = {
                 "episode": float(episode),
@@ -185,7 +203,7 @@ class ReinforceTrainer:
                 "entropy": float(entropy_bonus.item()),
                 "advantage_mean": float(advantages.mean().item()),
                 "returns_mean": float(targets.mean().item()),
-                "ratio_mean": 1.0,
+                "ratio_mean": float(ratio_mean),
                 "grad_norm": grad_norm_value,
                 "grad_clipped_to": float(self.config.grad_clip_norm),
                 "grad_exploded": float(grad_exploded),
@@ -212,3 +230,8 @@ class ReinforceTrainer:
                 self._save_checkpoint(episode)
 
         return logs
+
+
+# Backward-compatible aliases so existing imports keep working.
+PPOTrainerConfig = ReinforceTrainerConfig
+PPOTrainer = ReinforceTrainer
