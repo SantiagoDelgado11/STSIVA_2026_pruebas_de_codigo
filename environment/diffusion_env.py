@@ -75,6 +75,9 @@ class DiffusionSolverEnv:
         psnr_reward_weight: float = 0.7,
         ssim_reward_weight: float = 0.3,
         use_ssim_in_reward: bool = True,
+        psnr_norm_min_db: float = 10.0,
+        psnr_norm_max_db: float = 40.0,
+        psnr_norm_target_range: str = "minus_one_to_one",
         args=None,
     ) -> None:
         self.solver_library = solver_library
@@ -96,6 +99,14 @@ class DiffusionSolverEnv:
         self.psnr_reward_weight = float(psnr_reward_weight)
         self.ssim_reward_weight = float(ssim_reward_weight)
         self.use_ssim_in_reward = bool(use_ssim_in_reward)
+
+        self.psnr_norm_min_db = float(psnr_norm_min_db)
+        self.psnr_norm_max_db = float(psnr_norm_max_db)
+        self.psnr_norm_target_range = str(psnr_norm_target_range)
+        if self.psnr_norm_max_db <= self.psnr_norm_min_db:
+            raise ValueError("psnr_norm_max_db must be greater than psnr_norm_min_db.")
+        if self.psnr_norm_target_range not in {"zero_to_one", "minus_one_to_one"}:
+            raise ValueError("psnr_norm_target_range must be 'zero_to_one' or 'minus_one_to_one'.")
 
         self.iteration = 0
         self.previous_action: int = 0
@@ -132,13 +143,25 @@ class DiffusionSolverEnv:
         denominator = (mean_pred ** 2 + mean_target ** 2 + c1) * (var_pred + var_target + c2)
         return float(numerator / (denominator + 1e-8))
 
-    @staticmethod
-    def _normalize_psnr(psnr_db: float) -> float:
-        # Map typical PSNR ranges to a bounded scale for stable reward mixing.
+    def _normalize_psnr(
+        self,
+        psnr_db: float,
+    ) -> float:
+        """Min-max normalized PSNR with explicit saturation bounds.
+
+        1) Saturate to [psnr_norm_min_db, psnr_norm_max_db]
+        2) Min-max map to [0, 1]
+        3) Optionally map to [-1, 1]
+        """
         if not math.isfinite(psnr_db):
-            return 1.0
-        psnr_db = max(min(psnr_db, 80.0), -20.0)
-        return float(math.tanh((psnr_db - 20.0) / 10.0))
+            clipped = self.psnr_norm_min_db
+        else:
+            clipped = max(min(psnr_db, self.psnr_norm_max_db), self.psnr_norm_min_db)
+
+        unit = (clipped - self.psnr_norm_min_db) / (self.psnr_norm_max_db - self.psnr_norm_min_db)
+        if self.psnr_norm_target_range == "zero_to_one":
+            return float(unit)
+        return float((2.0 * unit) - 1.0)
 
     def _build_measurement(self, x_true_model: torch.Tensor, H: Any, noise_std: float) -> torch.Tensor:
         x_true_unit = self._model_to_unit(x_true_model)

@@ -13,7 +13,12 @@ def _to_unit_interval(x: torch.Tensor) -> torch.Tensor:
 
 
 def psnr_reward(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
-    """Compute PSNR in dB and return it as scalar reward."""
+    """Compute normalized PSNR reward with min-max saturation.
+
+    Saturation limits are explicit to prevent unstable gradients:
+    - psnr_min_db: lower bound maps to 0.0
+    - psnr_max_db: upper bound maps to 1.0
+    """
     pred = _to_unit_interval(x_hat)
     target = _to_unit_interval(x_true)
 

@@ -15,6 +15,7 @@ class Trajectory:
     entropies: list[torch.Tensor]
     values: list[torch.Tensor]
     rewards: list[float]
+    dones: list[bool]
 
 
 def discounted_returns(rewards: list[float], gamma: float, device: str | torch.device) -> torch.Tensor:
@@ -47,6 +48,7 @@ def rollout_episode(
     entropies: list[torch.Tensor] = []
     values: list[torch.Tensor] = []
     rewards: list[float] = []
+    dones: list[bool] = []
 
     state = env.reset(sample).to(device)
     done = False
@@ -67,6 +69,7 @@ def rollout_episode(
         values.append(policy_step.value.squeeze())
 
         rewards.append(float(reward))
+        dones.append(bool(done))
 
         state = next_state.to(device)
 
@@ -77,6 +80,7 @@ def rollout_episode(
         entropies=entropies,
         values=values,
         rewards=rewards,
+        dones=dones,
     )
     returns = discounted_returns(
         rewards, 

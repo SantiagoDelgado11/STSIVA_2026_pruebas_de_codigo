@@ -14,7 +14,7 @@ from training.rollout import rollout_episode
 
 @dataclass
 class ReinforceTrainerConfig:
-    """Configuration for policy-gradient training (PPO-style updates)."""
+    """Configuration for PPO actor-critic training."""
 
     num_episodes: int = 5000
     gamma: float = 1.0
@@ -33,11 +33,13 @@ class ReinforceTrainerConfig:
     huber_beta: float = 0.5
     ppo_clip_eps: float = 0.2
     ppo_update_epochs: int = 4
+    gae_lambda: float = 0.95
+    ppo_value_clip_eps: float = 0.2
     eps: float = 1e-8
 
 
 class ReinforceTrainer:
-    """Trainer that optimizes policy and value heads jointly with PPO."""
+    """Trainer that optimizes policy and value heads jointly with PPO + GAE."""
 
     def __init__(
         self,
@@ -94,6 +96,27 @@ class ReinforceTrainer:
         normalized = (returns - self._running_return_mean) / denom
         return torch.clamp(normalized, -self.config.max_abs_advantage, self.config.max_abs_advantage)
 
+    def _compute_gae(
+        self,
+        rewards: torch.Tensor,
+        values: torch.Tensor,
+        dones: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Compute Generalized Advantage Estimation and lambda-returns."""
+        advantages = torch.zeros_like(rewards)
+        gae = torch.tensor(0.0, dtype=torch.float32, device=rewards.device)
+
+        next_value = torch.tensor(0.0, dtype=torch.float32, device=rewards.device)
+        for t in reversed(range(rewards.shape[0])):
+            not_done = 1.0 - dones[t]
+            delta = rewards[t] + self.config.gamma * next_value * not_done - values[t]
+            gae = delta + self.config.gamma * self.config.gae_lambda * not_done * gae
+            advantages[t] = gae
+            next_value = values[t]
+
+        returns = advantages + values
+        return advantages, returns
+
     def train(self, episode_sampler) -> list[dict[str, float]]:
         self.agent.train()
         logs: list[dict[str, float]] = []
@@ -101,7 +124,7 @@ class ReinforceTrainer:
         for episode in range(1, self.config.num_episodes + 1):
             sample: EpisodeSample = episode_sampler()
 
-            trajectory, returns, info = rollout_episode(
+            trajectory, _, info = rollout_episode(
                 env=self.env,
                 agent=self.agent,
                 sample=sample,
@@ -113,22 +136,33 @@ class ReinforceTrainer:
             actions = torch.tensor(trajectory.actions, dtype=torch.long, device=self.device)
             old_log_probs = torch.stack(trajectory.log_probs).to(self.device).view(-1).detach()
             old_values = torch.stack(trajectory.values).to(self.device).view(-1).detach()
+            rewards = torch.tensor(trajectory.rewards, dtype=torch.float32, device=self.device)
+            dones = torch.tensor(trajectory.dones, dtype=torch.float32, device=self.device)
+
+            advantages, returns_gae = self._compute_gae(
+                rewards=rewards,
+                values=old_values,
+                dones=dones,
+            )
+
             psnr_norm = float(info.get("psnr_component", 0.0))
-            psnr_norm_tensor = torch.full_like(returns, psnr_norm)
-
-            targets = returns
             if self.config.psnr_norm_aux_weight > 0.0:
-                # Auxiliary signal: normalized PSNR contributes directly to PPO targets.
-                targets = targets + (self.config.psnr_norm_aux_weight * psnr_norm_tensor)
-            if self.config.normalize_returns:
-                targets = self._normalize_returns_online(targets)
+                advantages = advantages + (self.config.psnr_norm_aux_weight * psnr_norm)
 
-            advantages = (targets - old_values).detach()
+            targets = returns_gae
+            if self.config.normalize_returns:
+                targets = self._normalize_returns_online(returns_gae)
+
+            advantages = advantages.detach()
             if self.config.normalize_advantages:
                 advantages = self._normalize_advantages(advantages)
             ratio_mean = 1.0
             grad_norm_value = 0.0
             grad_exploded = False
+            loss = torch.tensor(0.0, device=self.device)
+            policy_loss = torch.tensor(0.0, device=self.device)
+            value_loss = torch.tensor(0.0, device=self.device)
+            entropy_bonus = torch.tensor(0.0, device=self.device)
 
             for _ in range(max(1, int(self.config.ppo_update_epochs))):
                 log_probs, entropies, values = self.agent.evaluate_actions(
@@ -147,10 +181,19 @@ class ReinforceTrainer:
                 surrogate_2 = clipped_ratios * advantages
                 policy_loss = -torch.min(surrogate_1, surrogate_2).mean()
 
+                values_flat = values.view(-1)
+                values_clipped = old_values + torch.clamp(
+                    values_flat - old_values,
+                    -self.config.ppo_value_clip_eps,
+                    self.config.ppo_value_clip_eps,
+                )
                 if self.config.critic_loss_type == "smooth_l1":
-                    value_loss = F.smooth_l1_loss(values.view(-1), targets.view(-1), beta=self.config.huber_beta)
+                    value_loss_unclipped = F.smooth_l1_loss(values_flat, targets.view(-1), beta=self.config.huber_beta)
+                    value_loss_clipped = F.smooth_l1_loss(values_clipped, targets.view(-1), beta=self.config.huber_beta)
                 else:
-                    value_loss = torch.mean((values - targets) ** 2)
+                    value_loss_unclipped = torch.mean((values_flat - targets.view(-1)) ** 2)
+                    value_loss_clipped = torch.mean((values_clipped - targets.view(-1)) ** 2)
+                value_loss = torch.max(value_loss_unclipped, value_loss_clipped)
 
                 entropy_bonus = entropies.mean()
                 loss = policy_loss + self.agent.value_coef * value_loss - self.agent.entropy_coef * entropy_bonus
@@ -172,7 +215,7 @@ class ReinforceTrainer:
                 self.optimizer.step()
                 ratio_mean = float(ratios.mean().item())
 
-            if not torch.isfinite(torch.tensor(loss.item(), device=self.device)):
+            if not torch.isfinite(loss):
                 continue
 
             episode_log = {
@@ -188,6 +231,7 @@ class ReinforceTrainer:
                 "entropy": float(entropy_bonus.item()),
                 "advantage_mean": float(advantages.mean().item()),
                 "returns_mean": float(targets.mean().item()),
+                "returns_gae_mean": float(returns_gae.mean().item()),
                 "ratio_mean": float(ratio_mean),
                 "grad_norm": grad_norm_value,
                 "grad_clipped_to": float(self.config.grad_clip_norm),
