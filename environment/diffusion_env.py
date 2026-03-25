@@ -193,64 +193,61 @@ class DiffusionSolverEnv:
         if self.current_sample is None or self.y is None or self.x_current is None or self.operator_model_domain is None:
             raise RuntimeError("Call reset() before step().")
 
-        solver = self.solver_library.get_solver(action)
-        solver.set_context(
-            x_true=None,
-            x_init=self.x_current,
-            iteration=self.iteration,
-            max_iterations=self.max_steps,
-            bandit_mode=self.bandit_mode,
-        )
-
+    
         x_prev = self.x_current.detach()
-        x_hat = self.solver_library.apply_action(
-            action=action,
-            x_k=x_prev,
-            y=self.y.to(self.device),
-            Phi=self.operator_model_domain,
-            ground_truth=self.current_sample.x_true.to(self.device) 
-        )
-
-        self.x_previous = x_prev
-        self.x_current = torch.clamp(x_hat.detach(), -1.0, 1.0)
-        self.previous_action = int(action)
-
-        x_hat_unit = self._model_to_unit(self.x_current)
+        
+        x_hats: list[torch.Tensor] = []
+        psnr_all: list[float] = []
         x_true_unit = self._model_to_unit(self.current_sample.x_true.to(self.device))
 
-        psnr_real = self._psnr_db_unit(x_hat_unit, x_true_unit)
-        ssim = self._ssim_unit(x_hat_unit, x_true_unit)
-
-        psnr_component = self._normalize_psnr(psnr_real)
-        ssim_component = max(min((2.0 * ssim) - 1.0, 1.0), -1.0)
-
-        psnr_baseline = None
-        if self.baseline_action in range(self.solver_library.action_dim):
-            baseline_solver = self.solver_library.get_solver(self.baseline_action)
-            baseline_solver.set_context(
+        for candidate_action in range(self.solver_library.action_dim):
+            candidate_solver = self.solver_library.get_solver(candidate_action)
+            candidate_solver.set_context(
                 x_true=None,
                 x_init=x_prev,
                 iteration=self.iteration,
                 max_iterations=self.max_steps,
                 bandit_mode=self.bandit_mode,
             )
-            x_baseline = self.solver_library.apply_action(
-                action=self.baseline_action,
+
+            candidate_x_hat = self.solver_library.apply_action(
+                action=candidate_action,
                 x_k=x_prev,
                 y=self.y.to(self.device),
                 Phi=self.operator_model_domain,
                 ground_truth=self.current_sample.x_true.to(self.device),
             )
-            x_baseline = torch.clamp(x_baseline.detach(), -1.0, 1.0)
-            x_baseline_unit = self._model_to_unit(x_baseline)
-            psnr_baseline = self._psnr_db_unit(x_baseline_unit, x_true_unit)
 
-        if psnr_baseline is None:
-            reward_raw = psnr_real
+            candidate_x_hat = torch.clamp(candidate_x_hat.detach(), -1.0, 1.0)
+            x_hats.append(candidate_x_hat)
+            candidate_x_hat_unit = self._model_to_unit(candidate_x_hat)
+            psnr_all.append(self._psnr_db_unit(candidate_x_hat_unit, x_true_unit))
 
+        solver = self.solver_library.get_solver(action)
+        x_hat = x_hats[action]
+
+
+        self.x_previous = x_prev
+        self.x_current = x_hat
+        self.previous_action = int(action)
+
+        x_hat_unit = self._model_to_unit(self.x_current)
+    
+        psnr_real = psnr_all[action]
+        ssim = self._ssim_unit(x_hat_unit, x_true_unit)
+
+
+        psnr_mean = float(sum(psnr_all) / len(psnr_all))
+        reward = 10.0 * (psnr_real - psnr_mean)
+        if psnr_real == max(psnr_all):
+            reward += 1.0
         else:
-            reward_raw = psnr_real - psnr_baseline
-        reward = reward_raw / 10.0
+            reward = psnr_component
+            reward -= 1.0
+
+        print(f"PSNRs: {psnr_all}, Action: {action}, Reward: {reward:.3f}")
+
+
 
         # Consistency is computed against physical-domain measurements [0, 1].
         residual = self.current_sample.H.forward_pass(x_hat_unit) - self.y
@@ -273,14 +270,11 @@ class DiffusionSolverEnv:
         info = {
             "solver": solver.name,
             "reward": reward,
-            "reward_raw": reward_raw,
             "psnr": psnr_real,
-            "psnr_baseline": psnr_baseline,
-            "psnr_component": psnr_component,
+            "psnr_all": psnr_all,
+            "psnr_mean": psnr_mean,
             "ssim": ssim,
-            "ssim_component": ssim_component,
             "consistency_mse": consistency,
             "bandit_mode": self.bandit_mode,
         }
-        print(f"PSNR: {psnr_real:.3f}, Reward: {reward:.3f}")
         return next_state, reward, done, info
