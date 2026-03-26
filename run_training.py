@@ -197,9 +197,9 @@ def parse_args():
     parser.add_argument("--num_channels", type=int, default=64)
     parser.add_argument("--num_res_blocks", type=int, default=3)
 
-    parser.add_argument("--num_episodes", type=int, default=5000)
+    parser.add_argument("--num_episodes", type=int, default=10000)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--learning_rate", type=float, default=2e-5)
+    parser.add_argument("--learning_rate", type=float, default=3e-4)
     parser.add_argument("--value_coef", type=float, default=0.5)
     parser.add_argument("--entropy_coef", type=float, default=0.03)
     parser.add_argument("--logit_temperature", type=float, default=1.5)
@@ -216,7 +216,7 @@ def parse_args():
     parser.add_argument("--checkpoint_dir", type=str, default="weights/rl_agent")
     parser.add_argument("--checkpoint_every", type=int, default=100)
 
-    parser.add_argument("--max_env_steps", type=int, default=5)
+    parser.add_argument("--max_env_steps", type=int, default=10)
     parser.add_argument("--sampling_ratio", type=float, default=0.1)
     parser.add_argument("--sampling_method", type=str, default="gaussian")
     parser.add_argument("--measurement_noise_std", type=float, default=0.0)
