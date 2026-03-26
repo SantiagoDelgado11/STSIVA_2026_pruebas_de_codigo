@@ -56,6 +56,9 @@ class SolverLibrary:
         self._validate_action(action)
         return self._solve(action=action, x_k=x_k, y=y, Phi=Phi, ground_truth=ground_truth) 
 
+    def apply_solver_step(self, action: int, x_k, y, Phi, ground_truth=None):
+        """Alias used by the environment for one iterative transition step."""
+        return self.apply_action(action=action, x_k=x_k, y=y, Phi=Phi, ground_truth=ground_truth)
 
     @property
     def action_dim(self) -> int:

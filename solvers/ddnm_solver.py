@@ -8,7 +8,7 @@ class DDNMSolver:
     """Solver adapter with standardized solve(y, H) interface."""
 
     name = "DDNM"
-    supports_continuation = False
+    supports_continuation = True
 
     def __init__(
         self,
@@ -40,13 +40,23 @@ class DDNMSolver:
     def set_context(self, **kwargs: Any) -> None:
         self._context = kwargs
 
-    def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H, ground_truth = None) -> torch.Tensor:
-        _ = x_k
-        return self.solver.sample(
+    def _blend_factor(self) -> float:
+        max_iterations = max(1, int(self._context.get("max_iterations", 1)))
+        return 1.0 / float(max_iterations)
+
+    def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H, ground_truth=None) -> torch.Tensor:
+        full_reconstruction = self.solver.sample(
             model=self.model,
             y = y.to(self.device),
             pseudo_inverse=H.transpose_pass,
             forward_pass=H.forward_pass,
-            ground_truth=ground_truth   ,
+            ground_truth=ground_truth,
             track_metrics=False,
         )
+
+        if x_k is None:
+            return full_reconstruction
+
+        alpha = self._blend_factor()
+        return torch.clamp((1.0 - alpha) * x_k + alpha * full_reconstruction, -1.0, 1.0)
+

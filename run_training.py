@@ -216,7 +216,7 @@ def parse_args():
     parser.add_argument("--checkpoint_dir", type=str, default="weights/rl_agent")
     parser.add_argument("--checkpoint_every", type=int, default=100)
 
-    parser.add_argument("--max_env_steps", type=int, default=1)
+    parser.add_argument("--max_env_steps", type=int, default=5)
     parser.add_argument("--sampling_ratio", type=float, default=0.1)
     parser.add_argument("--sampling_method", type=str, default="gaussian")
     parser.add_argument("--measurement_noise_std", type=float, default=0.0)

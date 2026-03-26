@@ -8,7 +8,7 @@ class DPSSolver:
     """Solver adapter with standardized solve(y, H) interface."""
 
     name = "DPS"
-    supports_continuation = False
+    supports_continuation = True
 
     def __init__(
         self,
@@ -41,13 +41,21 @@ class DPSSolver:
         )
 
     def set_context(self, **kwargs: Any) -> None:
-        """Store optional contextual information for compatibility."""
         self._context = kwargs
 
+    def _blend_factor(self) -> float:
+        max_iterations = max(1, int(self._context.get("max_iterations", 1)))
+        return 1.0 / float(max_iterations)    
+
     def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H, **kwargs) -> torch.Tensor:
-        _ = x_k
-        return self.solver.sample(
+        full_reconstruction = self.solver.sample(
             model=self.model,
             y=y.to(self.device),
             forward_pass=H.forward_pass,
         )
+
+        if x_k is None:
+            return full_reconstruction
+
+        alpha = self._blend_factor()
+        return torch.clamp((1.0 - alpha) * x_k + alpha * full_reconstruction, -1.0, 1.0)

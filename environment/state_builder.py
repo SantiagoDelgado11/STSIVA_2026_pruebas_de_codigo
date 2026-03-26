@@ -15,20 +15,7 @@ def get_args():
 
 
 class StateBuilder:
-    """Build bounded state vectors for solver selection.
-
-    Feature order (all bounded in [-1, 1]):
-    1. normalized log data fidelity
-    2. normalized log gradient norm
-    3. normalized log measurement energy
-    4. normalized log reconstruction energy
-    5. normalized log spatial variance of reconstruction
-    6. bounded convergence ratio
-    7. cosine alignment between x_k and x_{k-1}
-    8. normalized residual-to-signal ratio
-    9. normalized iteration index
-    10. normalized previous action index
-    """
+    """Build bounded state vectors for iterative solver control."""
 
     def __init__(self, args=None) -> None:
         if args is None:
@@ -38,7 +25,7 @@ class StateBuilder:
         self.state_clip = float(getattr(args, "state_clip", 1.0))
         self.log_scale = float(getattr(args, "log_scale", 6.0))
         self.zscore_momentum = float(getattr(args, "zscore_momentum", 0.95))
-        self.state_dim = 10
+        self.state_dim = 11
 
         self._running_mean: list[float] = [0.0] * self.state_dim
         self._running_var: list[float] = [1.0] * self.state_dim
@@ -73,6 +60,10 @@ class StateBuilder:
         centered = (2.0 * float(previous_action) / float(action_count - 1)) - 1.0
         return torch.tensor(centered, dtype=torch.float32, device=device)
 
+    def _normalize_psnr(self, psnr_db: float, device: torch.device) -> torch.Tensor:
+        scaled = (float(psnr_db) - 10.0) / 20.0
+        return torch.tensor(float(torch.tanh(torch.tensor(scaled))), dtype=torch.float32, device=device)
+
     def build(
         self,
         y: torch.Tensor,
@@ -83,6 +74,7 @@ class StateBuilder:
         max_iterations: int,
         previous_action: int,
         action_count: int,
+        previous_psnr: float,
     ) -> torch.Tensor:
         """Build a bounded state vector for a single environment step."""
         device = x_estimate.device
@@ -121,6 +113,7 @@ class StateBuilder:
             device=device,
         )
         previous_action_feature = self._normalize_action(previous_action, action_count, device)
+        prev_psnr_feature = self._normalize_psnr(previous_psnr, device)
 
         raw_features = [
             self._bounded_log_feature(fidelity),
@@ -133,6 +126,7 @@ class StateBuilder:
             self._bounded_log_feature(residual_to_signal),
             torch.clamp(normalized_iteration, -1.0, 1.0),
             torch.clamp(previous_action_feature, -1.0, 1.0),
+            torch.clamp(prev_psnr_feature, -1.0, 1.0),
         ]
 
         normalized_features = [
