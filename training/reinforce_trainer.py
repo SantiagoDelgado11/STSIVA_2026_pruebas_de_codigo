@@ -142,7 +142,7 @@ class ReinforceTrainer:
             bandit_mode = bool(info.get("bandit_mode", False))
             if bandit_mode:
                 returns_gae = rewards
-                advantages = rewards - old_values
+                advantages = returns_gae - old_values
             else:
                 advantages, returns_gae = self._compute_gae(
                     rewards=rewards,

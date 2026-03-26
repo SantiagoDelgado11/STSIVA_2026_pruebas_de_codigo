@@ -95,6 +95,10 @@ class DiffusionSolverEnv:
         self.x_previous: torch.Tensor | None = None
         self.operator_model_domain: ModelDomainOperator | None = None
         self.prev_psnr: float = 0.0
+        self._running_reward_mean: float = 0.0
+        self._running_reward_var: float = 1.0
+        self._reward_norm_momentum: float = 0.99
+        self._reward_eps: float = 1e-8
 
     @staticmethod
     def _model_to_unit(x: torch.Tensor) -> torch.Tensor:
@@ -187,7 +191,21 @@ class DiffusionSolverEnv:
         x_next = torch.clamp(x_next.detach(), -1.0, 1.0)
 
         next_psnr = self._psnr_db_unit(self._model_to_unit(x_next), x_true_unit)
-        reward = self.psnr_reward_weight * (next_psnr - prev_psnr)
+
+        delta = next_psnr - prev_psnr
+
+        # PPO-compatible step-wise reward shaping based only on the executed transition.
+        reward_raw = 2.0 * delta
+        if delta < 0.0:
+            reward_raw *= 1.5
+        reward_raw += 0.01 * next_psnr
+
+        # Running reward normalization to keep reward scale stable for PPO.
+        m = self._reward_norm_momentum
+        self._running_reward_mean = m * self._running_reward_mean + (1.0 - m) * reward_raw
+        centered = reward_raw - self._running_reward_mean
+        self._running_reward_var = m * self._running_reward_var + (1.0 - m) * (centered * centered)
+        reward = centered / ((self._running_reward_var ** 0.5) + self._reward_eps)
 
 
         self.x_previous = x_prev
@@ -206,6 +224,8 @@ class DiffusionSolverEnv:
             f"PSNR {prev_psnr:.3f}->{next_psnr:.3f}, Residual {consistency:.6f}"
         )
 
+        print(f"delta_psnr: {delta:.4f}, reward: {reward:.4f}")
+
         next_state = self.state_builder.build(
             y=self.y.to(self.device),
             H=self.operator_model_domain,
@@ -222,7 +242,7 @@ class DiffusionSolverEnv:
             "solver": solver.name,
             "reward": reward,
             "psnr": next_psnr,
-            "psnr_delta": (next_psnr - prev_psnr),
+            "psnr_delta": delta,
             "psnr_component": self._normalize_psnr(next_psnr),
             "consistency_mse": consistency,
             "bandit_mode": False,
