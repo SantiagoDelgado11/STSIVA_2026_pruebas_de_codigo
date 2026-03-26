@@ -8,7 +8,7 @@ class DDNMSolver:
     """Solver adapter with standardized solve(y, H) interface."""
 
     name = "DDNM"
-    supports_continuation = True
+    supports_continuation = False
 
     def __init__(
         self,
@@ -41,6 +41,8 @@ class DDNMSolver:
         self._context = kwargs
 
     def _blend_factor(self) -> float:
+        if bool(self._context.get("bandit_mode", False)):
+            return 1.0
         max_iterations = max(1, int(self._context.get("max_iterations", 1)))
         return 1.0 / float(max_iterations)
 
@@ -59,4 +61,5 @@ class DDNMSolver:
 
         alpha = self._blend_factor()
         return torch.clamp((1.0 - alpha) * x_k + alpha * full_reconstruction, -1.0, 1.0)
+
 

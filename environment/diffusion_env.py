@@ -76,10 +76,11 @@ class DiffusionSolverEnv:
         if args is not None:
             self.max_steps = max(1, int(args.max_steps))
             self.device = torch.device(args.device)
-            forced_bandit_mode = bool(args.bandit_mode)
+            forced_bandit_mode = bool(getattr(args, "bandit_mode", False))
         else:
             self.max_steps = max(1, int(max_steps))
             self.device = torch.device(device)
+            forced_bandit_mode = False
             
 
         self.psnr_reward_weight = float(psnr_reward_weight)
@@ -97,6 +98,7 @@ class DiffusionSolverEnv:
         self.operator_model_domain: ModelDomainOperator | None = None
         self.prev_psnr: float = 0.0
         self.reward_tanh_alpha: float = 0.25
+        self.bandit_mode: bool = bool(forced_bandit_mode) or bool(self.solver_library.is_contextual_bandit)
         self._state_builder_accepts_prev_psnr = (
             "previous_psnr" in inspect.signature(self.state_builder.build).parameters
         )
@@ -187,7 +189,7 @@ class DiffusionSolverEnv:
             x_init=x_prev,
             iteration=self.iteration,
             max_iterations=self.max_steps,
-            bandit_mode=False,
+            bandit_mode=self.bandit_mode,
         )
 
         x_next = self.solver_library.apply_solver_step(
@@ -218,7 +220,7 @@ class DiffusionSolverEnv:
 
         self.iteration += 1
         converged = consistency <= self.convergence_tol
-        done = self.iteration >= self.max_steps or converged
+        done = self.bandit_mode or self.iteration >= self.max_steps or converged
 
         print(
             f"Step {self.iteration}, Action {action}, Reward {reward:.4f}, "
@@ -236,7 +238,7 @@ class DiffusionSolverEnv:
             "psnr_delta": delta_psnr,
             "psnr_component": self._normalize_psnr(next_psnr),
             "consistency_mse": consistency,
-            "bandit_mode": False,
+            "bandit_mode": self.bandit_mode,
             "converged": converged,
             "iteration": self.iteration,
         }

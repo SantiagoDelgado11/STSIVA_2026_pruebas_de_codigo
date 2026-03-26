@@ -8,7 +8,7 @@ class DPSSolver:
     """Solver adapter with standardized solve(y, H) interface."""
 
     name = "DPS"
-    supports_continuation = True
+    supports_continuation = False
 
     def __init__(
         self,
@@ -44,6 +44,8 @@ class DPSSolver:
         self._context = kwargs
 
     def _blend_factor(self) -> float:
+        if bool(self._context.get("bandit_mode", False)):
+            return 1.0
         max_iterations = max(1, int(self._context.get("max_iterations", 1)))
         return 1.0 / float(max_iterations)    
 
