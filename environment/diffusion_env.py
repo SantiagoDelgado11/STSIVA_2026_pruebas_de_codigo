@@ -157,7 +157,6 @@ class DiffusionSolverEnv:
             max_iterations=self.max_steps,
             previous_action=self.previous_action,
             action_count=self.solver_library.action_dim,
-            previous_psnr=self.prev_psnr,
         )
         return state
 
@@ -235,7 +234,6 @@ class DiffusionSolverEnv:
             max_iterations=self.max_steps,
             previous_action=self.previous_action,
             action_count=self.solver_library.action_dim,
-            previous_psnr=self.prev_psnr,
         )
 
         info = {
