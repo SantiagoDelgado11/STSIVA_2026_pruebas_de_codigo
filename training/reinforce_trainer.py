@@ -35,6 +35,7 @@ class ReinforceTrainerConfig:
     ppo_update_epochs: int = 4
     gae_lambda: float = 0.95
     ppo_value_clip_eps: float = 0.2
+    target_kl: float = 0.03
     eps: float = 1e-8
 
 
@@ -162,6 +163,7 @@ class ReinforceTrainer:
             if self.config.normalize_advantages:
                 advantages = self._normalize_advantages(advantages)
             ratio_mean = 1.0
+            approx_kl = 0.0
             grad_norm_value = 0.0
             grad_exploded = False
             loss = torch.tensor(0.0, device=self.device)
@@ -177,6 +179,7 @@ class ReinforceTrainer:
                 values = values.view(-1)
 
                 ratios = torch.exp(log_probs - old_log_probs)
+                approx_kl = float((old_log_probs - log_probs).mean().detach().item())
                 clipped_ratios = torch.clamp(
                     ratios,
                     1.0 - self.config.ppo_clip_eps,
@@ -203,6 +206,9 @@ class ReinforceTrainer:
                 entropy_bonus = entropies.mean()
                 loss = policy_loss + self.agent.value_coef * value_loss - self.agent.entropy_coef * entropy_bonus
 
+                if approx_kl > self.config.target_kl:
+                    break
+                
                 if not torch.isfinite(loss):
                     break
 
@@ -219,6 +225,9 @@ class ReinforceTrainer:
                 grad_exploded = grad_norm_value > self.config.grad_explosion_threshold
                 self.optimizer.step()
                 ratio_mean = float(ratios.mean().item())
+                
+                if approx_kl > self.config.target_kl:
+                    break
 
             if not torch.isfinite(loss):
                 continue
@@ -238,6 +247,7 @@ class ReinforceTrainer:
                 "returns_mean": float(targets.mean().item()),
                 "returns_gae_mean": float(returns_gae.mean().item()),
                 "ratio_mean": float(ratio_mean),
+                "approx_kl": float(approx_kl),
                 "grad_norm": grad_norm_value,
                 "grad_clipped_to": float(self.config.grad_clip_norm),
                 "grad_exploded": float(grad_exploded),

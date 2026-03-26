@@ -136,6 +136,7 @@ def train(args):
             huber_beta=args.huber_beta,
             ppo_clip_eps=args.ppo_clip_eps,
             ppo_update_epochs=args.ppo_update_epochs,
+            target_kl=args.target_kl,
         ),
         device=device,
     )
@@ -199,7 +200,7 @@ def parse_args():
 
     parser.add_argument("--num_episodes", type=int, default=10000)
     parser.add_argument("--gamma", type=float, default=0.99)
-    parser.add_argument("--learning_rate", type=float, default=3e-4)
+    parser.add_argument("--learning_rate", type=float, default=2e-5)
     parser.add_argument("--value_coef", type=float, default=0.5)
     parser.add_argument("--entropy_coef", type=float, default=0.03)
     parser.add_argument("--logit_temperature", type=float, default=1.5)
@@ -213,6 +214,7 @@ def parse_args():
     parser.add_argument("--huber_beta", type=float, default=0.5)
     parser.add_argument("--ppo_clip_eps", type=float, default=0.2)
     parser.add_argument("--ppo_update_epochs", type=int, default=4)
+    parser.add_argument("--target_kl", type=float, default=0.03)
     parser.add_argument("--checkpoint_dir", type=str, default="weights/rl_agent")
     parser.add_argument("--checkpoint_every", type=int, default=100)
 

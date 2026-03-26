@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import math
+import inspect 
 from typing import Any
 
 import torch
@@ -96,6 +97,28 @@ class DiffusionSolverEnv:
         self.operator_model_domain: ModelDomainOperator | None = None
         self.prev_psnr: float = 0.0
         self.reward_tanh_alpha: float = 0.25
+        self._state_builder_accepts_prev_psnr = (
+            "previous_psnr" in inspect.signature(self.state_builder.build).parameters
+        )
+
+    def _build_state(self) -> torch.Tensor:
+        if self.y is None or self.operator_model_domain is None or self.x_current is None:
+            raise RuntimeError("Environment state is not initialized.")
+
+        base_kwargs = dict(
+            y=self.y.to(self.device),
+            H=self.operator_model_domain,
+            x_estimate=self.x_current,
+            previous_estimate=self.x_previous,
+            iteration=self.iteration,
+            max_iterations=self.max_steps,
+            previous_action=self.previous_action,
+            action_count=self.solver_library.action_dim,
+        )
+        if self._state_builder_accepts_prev_psnr:
+            base_kwargs["previous_psnr"] = self.prev_psnr
+        return self.state_builder.build(**base_kwargs)
+
 
     @staticmethod
     def _model_to_unit(x: torch.Tensor) -> torch.Tensor:
@@ -145,17 +168,7 @@ class DiffusionSolverEnv:
         x_true_unit = self._model_to_unit(sample.x_true.to(self.device))
         self.prev_psnr = self._psnr_db_unit(self._model_to_unit(self.x_current), x_true_unit)
 
-        state = self.state_builder.build(
-            y=self.y.to(self.device),
-            H=self.operator_model_domain,
-            x_estimate=self.x_current,
-            previous_estimate=self.x_previous,
-            iteration=self.iteration,
-            max_iterations=self.max_steps,
-            previous_action=self.previous_action,
-            action_count=self.solver_library.action_dim,
-        )
-        return state
+        return self._build_state()
 
     def step(self, action: int) -> tuple[torch.Tensor, float, bool, dict[str, Any]]:
         if self.current_sample is None or self.y is None or self.x_current is None or self.operator_model_domain is None:
@@ -189,10 +202,11 @@ class DiffusionSolverEnv:
         next_psnr = self._psnr_db_unit(self._model_to_unit(x_next), x_true_unit)
 
         delta_psnr = next_psnr - prev_psnr
-
+        
         # Reward aligned with the objective: maximize immediate PSNR improvement.
         # tanh keeps rewards bounded in [-1, 1] while preserving the sign of delta_psnr.
         reward = float(math.tanh(self.reward_tanh_alpha * delta_psnr))
+
 
 
         self.x_previous = x_prev
@@ -213,16 +227,7 @@ class DiffusionSolverEnv:
 
         print(f"delta_psnr={delta_psnr:.4f}, reward={reward:.4f}")
 
-        next_state = self.state_builder.build(
-            y=self.y.to(self.device),
-            H=self.operator_model_domain,
-            x_estimate=self.x_current,
-            previous_estimate=self.x_previous,
-            iteration=self.iteration,
-            max_iterations=self.max_steps,
-            previous_action=self.previous_action,
-            action_count=self.solver_library.action_dim,
-        )
+        next_state = self._build_state()
 
         info = {
             "solver": solver.name,
