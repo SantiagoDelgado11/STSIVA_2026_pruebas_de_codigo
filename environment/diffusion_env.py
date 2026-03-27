@@ -6,10 +6,29 @@ from typing import Any
 
 import torch
 
-from environment.reward import psnr_normalized, ssim_reward
+from environment import reward as reward_utils
 from environment.state_builder import StateBuilder
 from solvers.solver_library import SolverLibrary
 
+def _psnr_normalized_compat(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
+    fn = getattr(reward_utils, "psnr_normalized", None)
+    if callable(fn):
+        return float(fn(x_hat, x_true))
+
+    # Backward compatibility for older reward.py modules that only expose psnr_db/psnr_reward.
+    psnr_db_fn = getattr(reward_utils, "psnr_db", None)
+    if not callable(psnr_db_fn):
+        psnr_db_fn = getattr(reward_utils, "psnr_reward")
+    psnr_db_value = float(psnr_db_fn(x_hat, x_true))
+    scaled = (psnr_db_value - 10.0) / 20.0
+    return float(torch.tanh(torch.tensor(scaled)).item())
+
+
+def _ssim_reward_compat(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
+    fn = getattr(reward_utils, "ssim_reward", None)
+    if callable(fn):
+        return float(fn(x_hat, x_true))
+    return 0.0
 
 def get_args():
     parser = argparse.ArgumentParser(description="Diffusion RL Environment")
