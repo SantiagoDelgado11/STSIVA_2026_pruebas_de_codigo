@@ -33,17 +33,23 @@ def set_seed(seed: int) -> None:
 
 def build_backbone(args, device) -> torch.nn.Module:
 
-    if not Path(args.weights).exists():
-        raise FileNotFoundError(f"Checkpoint not found: {args.weights}")
-
-    checkpoint = torch.load(args.weights, map_location=device, weights_only=True)
     model = create_model(
         image_size=args.image_size,
         num_channels=args.num_channels,
         num_res_blocks=args.num_res_blocks,
         input_channels=args.input_channels,
     ).to(device)
-    model.load_state_dict(checkpoint["model_state"])
+    if Path(args.weights).exists():
+        checkpoint = torch.load(args.weights, map_location=device, weights_only=True)
+        model.load_state_dict(checkpoint["model_state"])
+        print(f"Loaded diffusion backbone weights from: {args.weights}")
+    else:
+        if args.require_weights:
+            raise FileNotFoundError(f"Checkpoint not found: {args.weights}")
+        print(
+            f"WARNING: checkpoint not found at '{args.weights}'. "
+            "Training will start with randomly initialized diffusion backbone."
+        )
     model.eval()
     return model
 
@@ -56,12 +62,12 @@ def train(args):
 
     model = build_backbone(args=args, device=device)
 
-    train_dataset = CIFAR10(root="./data", train=True, download=True, transform=transforms.ToTensor())
+    train_dataset = CIFAR10(root=args.data_dir, train=True, download=True, transform=transforms.ToTensor())
     dataloader = DataLoader(
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=0,
+        num_workers=max(0, int(args.num_workers)),,
     )
 
 
@@ -108,6 +114,7 @@ def train(args):
         psnr_reward_weight=args.reward_psnr_weight,
         ssim_reward_weight=args.reward_ssim_weight,
         use_ssim_in_reward=args.use_ssim_in_reward,
+        verbose=args.env_verbose,
     )
 
     agent = ReinforceAgent(
@@ -156,6 +163,11 @@ def train(args):
         x_true = images[0:1].to(device)
         x_true = x_true * 2.0 - 1.0
 
+        sampling_method = str(args.sampling_method).lower()
+        if sampling_method != "hadamard":
+            raise ValueError(f"Unsupported sampling_method='{args.sampling_method}'. Only 'hadamard' is supported.")
+
+
         operator = SPCModel(
             im_size=args.image_size,
             compression_ratio=args.sampling_ratio,
@@ -190,6 +202,13 @@ def parse_args():
 
     parser.add_argument("--num_workers", type=int, default=4)
     parser.add_argument("--data_dir", type=str, default="./data")
+    parser.add_argument(
+        "--require_weights",
+        type=lambda x: str(x).lower() in ["1", "true", "yes", "y"],
+        default=False,
+        help="If true, fail when --weights checkpoint is missing.",
+    )
+
 
     parser.add_argument("--weights", type=str, default="weights/e_1000_bs_64_lr_0.0003_seed_2_img_32_schedule_cosine_gpu_0_c_3_si_100/checkpoints/latest.pth.tar")
 
@@ -220,7 +239,7 @@ def parse_args():
 
     parser.add_argument("--max_env_steps", type=int, default=10)
     parser.add_argument("--sampling_ratio", type=float, default=0.1)
-    parser.add_argument("--sampling_method", type=str, default="gaussian")
+    parser.add_argument("--sampling_method", type=str, default="hadamard")
     parser.add_argument("--measurement_noise_std", type=float, default=0.0)
     parser.add_argument("--reward_psnr_weight", type=float, default=0.7)
     parser.add_argument("--reward_ssim_weight", type=float, default=0.3)
@@ -234,6 +253,13 @@ def parse_args():
     parser.add_argument("--diffpir_steps", type=int, default=50)
     parser.add_argument("--dps_steps", type=int, default=50)
     parser.add_argument("--ddnm_steps", type=int, default=50)
+    parser.add_argument(
+        "--env_verbose",
+        type=lambda x: str(x).lower() in ["1", "true", "yes", "y"],
+        default=False,
+        help="Enable step-level environment logging.",
+    )
+
 
     return parser.parse_args()
 

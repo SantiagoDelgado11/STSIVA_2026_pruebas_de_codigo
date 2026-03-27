@@ -13,17 +13,25 @@ def _to_unit_interval(x: torch.Tensor) -> torch.Tensor:
 
 
 def psnr_reward(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
-    """Compute normalized PSNR reward with min-max saturation.
+    """Compute PSNR in dB."""
 
-    Saturation limits are explicit to prevent unstable gradients:
-    - psnr_min_db: lower bound maps to 0.0
-    - psnr_max_db: upper bound maps to 1.0
-    """
     pred = _to_unit_interval(x_hat)
     target = _to_unit_interval(x_true)
 
     mse = torch.mean((pred - target) ** 2).item()
-    return float(10.0 * math.log10(1.0 / mse))
+    return float(10.0 * math.log10(1.0 / (mse + 1e-8)))
+
+def psnr_normalized(
+    x_hat: torch.Tensor,
+    x_true: torch.Tensor,
+    center_db: float = 10.0,
+    scale_db: float = 20.0,
+) -> float:
+    """Compute bounded PSNR proxy in [-1, 1] using tanh scaling."""
+    psnr = psnr_db(x_hat, x_true)
+    scaled = (psnr - center_db) / max(scale_db, 1e-8)
+    return float(math.tanh(scaled))
+
 
 def psnr_db(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
     """Compute PSNR in dB (solo para logging / análisis)."""
@@ -53,5 +61,5 @@ def ssim_reward(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
     numerator = (2 * mean_pred * mean_target + C1) * (2 * covar + C2)
     denominator = (mean_pred ** 2 + mean_target ** 2 + C1) * (var_pred + var_target + C2)
 
-    return float(numerator / denominator)
+    return float(torch.clamp(numerator / (denominator + 1e-8), -1.0, 1.0))
 

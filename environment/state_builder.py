@@ -1,27 +1,13 @@
 from __future__ import annotations
 
-import argparse
-
 import torch
-
-
-def get_args():
-    parser = argparse.ArgumentParser(description="StateBuilder configuration")
-    parser.add_argument("--eps", type=float, default=1e-8)
-    parser.add_argument("--state_clip", type=float, default=1.0)
-    parser.add_argument("--log_scale", type=float, default=6.0)
-    parser.add_argument("--zscore_momentum", type=float, default=0.95)
-    return parser.parse_known_args()[0]
 
 
 class StateBuilder:
     """Build bounded state vectors for iterative solver control."""
 
     def __init__(self, args=None) -> None:
-        if args is None:
-            args = get_args()
-
-        self.eps = float(args.eps)
+        self.eps = float(getattr(args, "eps", 1e-8))
         self.state_clip = float(getattr(args, "state_clip", 1.0))
         self.log_scale = float(getattr(args, "log_scale", 6.0))
         self.zscore_momentum = float(getattr(args, "zscore_momentum", 0.95))
@@ -61,8 +47,7 @@ class StateBuilder:
         return torch.tensor(centered, dtype=torch.float32, device=device)
 
     def _normalize_psnr(self, psnr_db: float, device: torch.device) -> torch.Tensor:
-        scaled = (float(psnr_db) - 10.0) / 20.0
-        return torch.tensor(float(torch.tanh(torch.tensor(scaled))), dtype=torch.float32, device=device)
+        return torch.tensor(float(psnr_db), dtype=torch.float32, device=device).clamp(-1.0, 1.0)
 
     def build(
         self,

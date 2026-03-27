@@ -16,7 +16,7 @@ from training.rollout import rollout_episode
 class ReinforceTrainerConfig:
     """Configuration for PPO actor-critic training."""
 
-    num_episodes: int = 5000
+    num_episodes: int = 20000
     gamma: float = 1.0
     learning_rate: float = 2e-5
     weight_decay: float = 0.0
@@ -237,8 +237,8 @@ class ReinforceTrainer:
                 "reward": float(sum(trajectory.rewards)),
                 "selected_action": float(trajectory.actions[-1]),
                 "selected_solver": float(["DDNM", "DPS", "DiffPIR"].index(info["solver"])),
-                "psnr": float(info["psnr"]),
                 "psnr_norm": float(psnr_norm),
+                "ssim": float(info.get("ssim", 0.0)),
                 "loss_total": float(loss.item()),
                 "loss_policy": float(policy_loss.item()),
                 "loss_value": float(value_loss.item()),
@@ -263,8 +263,8 @@ class ReinforceTrainer:
                     f"[Episode {episode:04d}] "
                     f"reward={episode_log['reward']:.3f} "
                     f"solver={info['solver']} "
-                    f"psnr={episode_log['psnr']:.3f} "
                     f"psnr_norm={episode_log['psnr_norm']:.3f} "
+                    f"ssim={episode_log['ssim']:.3f} "
                     f"loss={episode_log['loss_total']:.4f} "
                     f"grad_norm={episode_log['grad_norm']:.4f}"
                 )
