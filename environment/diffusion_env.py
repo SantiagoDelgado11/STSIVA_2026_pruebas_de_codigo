@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import argparse
-import inspect 
+import inspect
 from typing import Any
 
 import torch
@@ -10,12 +10,13 @@ from environment import reward as reward_utils
 from environment.state_builder import StateBuilder
 from solvers.solver_library import SolverLibrary
 
+
 def _psnr_normalized_compat(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
     fn = getattr(reward_utils, "psnr_normalized", None)
     if callable(fn):
         return float(fn(x_hat, x_true))
 
-    # Backward compatibility for older reward.py modules that only expose psnr_db/psnr_reward.
+    # Compatibilidad con versiones antiguas de reward.py (sin psnr_normalized).
     psnr_db_fn = getattr(reward_utils, "psnr_db", None)
     if not callable(psnr_db_fn):
         psnr_db_fn = getattr(reward_utils, "psnr_reward")
@@ -29,6 +30,12 @@ def _ssim_reward_compat(x_hat: torch.Tensor, x_true: torch.Tensor) -> float:
     if callable(fn):
         return float(fn(x_hat, x_true))
     return 0.0
+
+
+# Aliases públicos para backward compatibility.
+psnr_normalized = _psnr_normalized_compat
+ssim_reward = _ssim_reward_compat
+
 
 def get_args():
     parser = argparse.ArgumentParser(description="Diffusion RL Environment")
@@ -155,7 +162,7 @@ class DiffusionSolverEnv:
         if noise_std > 0.0:
             measurement = measurement + noise_std * torch.randn_like(measurement)
         return measurement
-    
+
     def _compute_consistency_mse(self, x_model: torch.Tensor) -> float:
         if self.current_sample is None or self.y is None:
             return 0.0
@@ -175,9 +182,7 @@ class DiffusionSolverEnv:
         self.x_current = self._unit_to_model(torch.clamp(x0_unit, 0.0, 1.0)).detach().to(self.device)
         self.x_previous = None
 
-        # CORRECCIÓN AQUÍ
         self.prev_psnr_norm = _psnr_normalized_compat(self.x_current, sample.x_true.to(self.device))
-
         return self._build_state()
 
     def step(self, action: int) -> tuple[torch.Tensor, float, bool, dict[str, Any]]:
@@ -185,15 +190,12 @@ class DiffusionSolverEnv:
             raise RuntimeError("Call reset() before step().")
 
         x_prev = self.x_current.detach()
-        
         x_true = self.current_sample.x_true.to(self.device)
-        
-        # CORRECCIÓN AQUÍ
+
         prev_psnr_norm = _psnr_normalized_compat(x_prev, x_true)
         prev_ssim = _ssim_reward_compat(x_prev, x_true)
 
         solver = self.solver_library.get_solver(action)
-
         solver.set_context(
             x_true=None,
             x_init=x_prev,
@@ -211,10 +213,8 @@ class DiffusionSolverEnv:
         )
         x_next = torch.clamp(x_next.detach(), -1.0, 1.0)
 
-        # CORRECCIÓN AQUÍ
         next_psnr_norm = _psnr_normalized_compat(x_next, x_true)
         next_ssim = _ssim_reward_compat(x_next, x_true)
-
 
         delta_psnr_norm = next_psnr_norm - prev_psnr_norm
         delta_ssim = next_ssim - prev_ssim
@@ -230,12 +230,10 @@ class DiffusionSolverEnv:
             reward = float(delta_psnr_norm)
         reward = float(max(-1.0, min(1.0, reward)))
 
-
         self.x_previous = x_prev
         self.x_current = x_next
         self.previous_action = int(action)
         self.prev_psnr_norm = next_psnr_norm
-
 
         consistency = self._compute_consistency_mse(self.x_current)
 
