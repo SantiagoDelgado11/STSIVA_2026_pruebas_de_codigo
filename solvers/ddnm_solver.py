@@ -8,7 +8,7 @@ class DDNMSolver:
     """Solver adapter with standardized solve(y, H) interface."""
 
     name = "DDNM"
-    supports_continuation = False
+    supports_continuation = True
 
     def __init__(
         self,
@@ -41,10 +41,14 @@ class DDNMSolver:
         self._context = kwargs
 
     def _blend_factor(self) -> float:
+        """Use an iteration-aware blend so multi-step rollouts can reach the solver output."""
         if bool(self._context.get("bandit_mode", False)):
             return 1.0
         max_iterations = max(1, int(self._context.get("max_iterations", 1)))
-        return 1.0 / float(max_iterations)
+        iteration = max(0, int(self._context.get("iteration", 0)))
+        remaining = max(1, max_iterations - iteration)
+        return 1.0 / float(remaining)
+
 
     def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H, ground_truth=None) -> torch.Tensor:
         full_reconstruction = self.solver.sample(
