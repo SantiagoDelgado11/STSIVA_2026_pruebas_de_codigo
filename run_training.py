@@ -67,7 +67,7 @@ def train(args):
         train_dataset,
         batch_size=args.batch_size,
         shuffle=True,
-        num_workers=max(0, int(args.num_workers)),,
+        num_workers=max(0, int(args.num_workers)),
     )
 
 
