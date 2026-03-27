@@ -141,7 +141,6 @@ class DiffusionSolverEnv:
             base_kwargs["previous_psnr"] = self.prev_psnr_norm
         return self.state_builder.build(**base_kwargs)
 
-
     @staticmethod
     def _model_to_unit(x: torch.Tensor) -> torch.Tensor:
         return torch.clamp((x + 1.0) / 2.0, 0.0, 1.0)
@@ -149,7 +148,6 @@ class DiffusionSolverEnv:
     @staticmethod
     def _unit_to_model(x: torch.Tensor) -> torch.Tensor:
         return torch.clamp(2.0 * x - 1.0, -1.0, 1.0)
-
 
     def _build_measurement(self, x_true_model: torch.Tensor, H: Any, noise_std: float) -> torch.Tensor:
         x_true_unit = self._model_to_unit(x_true_model)
@@ -165,7 +163,6 @@ class DiffusionSolverEnv:
         residual = self.current_sample.H.forward_pass(x_unit) - self.y
         return float(torch.mean(residual.square()).item())
 
-
     def reset(self, sample: EpisodeSample) -> torch.Tensor:
         self.current_sample = sample
         self.iteration = 0
@@ -178,7 +175,8 @@ class DiffusionSolverEnv:
         self.x_current = self._unit_to_model(torch.clamp(x0_unit, 0.0, 1.0)).detach().to(self.device)
         self.x_previous = None
 
-        self.prev_psnr_norm = psnr_normalized(self.x_current, sample.x_true.to(self.device))
+        # CORRECCIÓN AQUÍ
+        self.prev_psnr_norm = _psnr_normalized_compat(self.x_current, sample.x_true.to(self.device))
 
         return self._build_state()
 
@@ -189,8 +187,10 @@ class DiffusionSolverEnv:
         x_prev = self.x_current.detach()
         
         x_true = self.current_sample.x_true.to(self.device)
-        prev_psnr_norm = psnr_normalized(x_prev, x_true)
-        prev_ssim = ssim_reward(x_prev, x_true)
+        
+        # CORRECCIÓN AQUÍ
+        prev_psnr_norm = _psnr_normalized_compat(x_prev, x_true)
+        prev_ssim = _ssim_reward_compat(x_prev, x_true)
 
         solver = self.solver_library.get_solver(action)
 
@@ -211,8 +211,9 @@ class DiffusionSolverEnv:
         )
         x_next = torch.clamp(x_next.detach(), -1.0, 1.0)
 
-        next_psnr_norm = psnr_normalized(x_next, x_true)
-        next_ssim = ssim_reward(x_next, x_true)
+        # CORRECCIÓN AQUÍ
+        next_psnr_norm = _psnr_normalized_compat(x_next, x_true)
+        next_ssim = _ssim_reward_compat(x_next, x_true)
 
 
         delta_psnr_norm = next_psnr_norm - prev_psnr_norm
@@ -228,8 +229,6 @@ class DiffusionSolverEnv:
         else:
             reward = float(delta_psnr_norm)
         reward = float(max(-1.0, min(1.0, reward)))
-
-
 
 
         self.x_previous = x_prev
