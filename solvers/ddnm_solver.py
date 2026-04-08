@@ -1,14 +1,14 @@
 from __future__ import annotations
-from typing import Any
+
 import torch
-from algos.ddnm import DDNM
+
+from solvers.base_diffusion_solver import BaseDiffusionStepSolver, DiffusionStepResult
 
 
-class DDNMSolver:
-    """Solver adapter with standardized solve(y, H) interface."""
+class DDNMSolver(BaseDiffusionStepSolver):
+    """Single reverse-diffusion DDNM update."""
 
     name = "DDNM"
-    supports_continuation = True
 
     def __init__(
         self,
@@ -19,51 +19,53 @@ class DDNMSolver:
         beta_end: float = 0.02,
         img_size: int = 32,
         schedule_name: str = "cosine",
-        channels: int = 1,
-        eta: float = 0.85,
+        channels: int = 3,
+        eta: float = 1.0,
     ) -> None:
-
-        self.model = model
-        self.device = torch.device(device)
-        self._context: dict[str, Any] = {}
-
-        self.solver = DDNM(
-            noise_steps=steps,
+        super().__init__(
+            model=model,
+            device=device,
+            steps=steps,
             beta_start=beta_start,
             beta_end=beta_end,
             img_size=img_size,
             schedule_name=schedule_name,
             channels=channels,
-            eta=eta,
+            clip_denoised=False,
         )
+        self.eta = float(eta)
 
-    def set_context(self, **kwargs: Any) -> None:
-        self._context = kwargs
+    def step(
+        self,
+        x_t: torch.Tensor,
+        timestep: int,
+        y: torch.Tensor,
+        H,
+    ) -> DiffusionStepResult:
+        t = self._make_timestep_tensor(x_t, timestep)
+        pseudo_inverse = getattr(H, "pseudo_inverse", H.transpose_pass)
 
-    def _blend_factor(self) -> float:
-        """Use an iteration-aware blend so multi-step rollouts can reach the solver output."""
-        if bool(self._context.get("bandit_mode", False)):
-            return 1.0
-        max_iterations = max(1, int(self._context.get("max_iterations", 1)))
-        iteration = max(0, int(self._context.get("iteration", 0)))
-        remaining = max(1, max_iterations - iteration)
-        return 1.0 / float(remaining)
+        with torch.no_grad():
+            predicted_noise = self.model(x_t, t)
+            alpha_hat_t = self._extract(self.alpha_hat, t, x_t)
+            sqrt_alpha_hat_t = torch.sqrt(alpha_hat_t)
+            sqrt_one_minus_alpha_hat_t = torch.sqrt(1.0 - alpha_hat_t)
+            alpha_hat_prev_t = self._extract(self.alpha_hat_prev, t, x_t)
 
+            x0_t = (x_t - sqrt_one_minus_alpha_hat_t * predicted_noise) / torch.clamp(sqrt_alpha_hat_t, min=1e-8)
+            A_pseudo_inverse_y = pseudo_inverse(y)
+            x0_projected = x0_t - pseudo_inverse(H.forward_pass(x0_t)) + A_pseudo_inverse_y
 
-    def solve(self, x_k: torch.Tensor | None, y: torch.Tensor, H, ground_truth=None) -> torch.Tensor:
-        full_reconstruction = self.solver.sample(
-            model=self.model,
-            y = y.to(self.device),
-            pseudo_inverse=H.transpose_pass,
-            forward_pass=H.forward_pass,
-            ground_truth=ground_truth,
-            track_metrics=False,
+            if int(timestep) == 0:
+                x_prev = x0_projected
+            else:
+                c1 = torch.sqrt(1.0 - alpha_hat_prev_t) * self.eta
+                c2 = torch.sqrt(1.0 - alpha_hat_prev_t) * max(0.0, 1.0 - self.eta**2) ** 0.5
+                x_prev = torch.sqrt(alpha_hat_prev_t) * x0_projected
+                x_prev = x_prev + c1 * torch.randn_like(x_t) + c2 * predicted_noise
+
+        return DiffusionStepResult(
+            x_prev=x_prev.detach(),
+            x0_estimate=self._clamp_estimate(x0_projected.detach()),
+            info={},
         )
-
-        if x_k is None:
-            return full_reconstruction
-
-        alpha = self._blend_factor()
-        return torch.clamp((1.0 - alpha) * x_k + alpha * full_reconstruction, -1.0, 1.0)
-
-

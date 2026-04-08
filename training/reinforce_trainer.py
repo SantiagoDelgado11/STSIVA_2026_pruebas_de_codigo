@@ -7,7 +7,7 @@ import torch
 import torch.nn.functional as F
 from torch import optim
 
-from agents.agent import ReinforceAgent
+from agents.agent import PPOAgent, ReinforceAgent
 from environment.diffusion_env import DiffusionSolverEnv, EpisodeSample
 from training.rollout import rollout_episode
 
@@ -16,24 +16,24 @@ from training.rollout import rollout_episode
 class ReinforceTrainerConfig:
     """Configuration for PPO actor-critic training."""
 
-    num_episodes: int = 20000
+    num_episodes: int = 256
     gamma: float = 1.0
-    learning_rate: float = 2e-5
+    learning_rate: float = 1e-4
     weight_decay: float = 0.0
-    grad_clip_norm: float = 0.3
-    grad_explosion_threshold: float = 5.0
-    checkpoint_dir: str = "weights/rl_solver_selector"
-    checkpoint_every: int = 100
+    grad_clip_norm: float = 1.0
+    grad_explosion_threshold: float = 10.0
+    checkpoint_dir: str = "weights/ppo_solver_selector"
+    checkpoint_every: int = 25
     normalize_returns: bool = True
     normalize_advantages: bool = True
-    max_abs_advantage: float = 2.5
+    max_abs_advantage: float = 5.0
     returns_norm_momentum: float = 0.99
-    psnr_norm_aux_weight: float = 0.2
+    psnr_norm_aux_weight: float = 0.0
     critic_loss_type: str = "smooth_l1"
     huber_beta: float = 0.5
     ppo_clip_eps: float = 0.2
     ppo_update_epochs: int = 4
-    gae_lambda: float = 0.95
+    gae_lambda: float = 0.98
     ppo_value_clip_eps: float = 0.2
     target_kl: float = 0.03
     eps: float = 1e-8
@@ -44,7 +44,7 @@ class ReinforceTrainer:
 
     def __init__(
         self,
-        agent: ReinforceAgent,
+        agent: PPOAgent,
         env: DiffusionSolverEnv,
         config: ReinforceTrainerConfig,
         device: str | torch.device,
@@ -61,19 +61,34 @@ class ReinforceTrainer:
         )
         self._running_return_mean = 0.0
         self._running_return_var = 1.0
+        self._best_reward = float("-inf")
         Path(config.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
-    def _save_checkpoint(self, episode: int) -> None:
-        ckpt_path = Path(self.config.checkpoint_dir) / f"episode_{episode:05d}.pth"
-        torch.save(
-            {
-                "episode": episode,
-                "agent_state": self.agent.state_dict(),
-                "optimizer_state": self.optimizer.state_dict(),
-                "config": self.config.__dict__,
-            },
-            ckpt_path,
-        )
+    def _checkpoint_payload(self, episode: int, episode_log: dict[str, float]) -> dict:
+        return {
+            "episode": episode,
+            "agent_state": self.agent.state_dict(),
+            "optimizer_state": self.optimizer.state_dict(),
+            "config": self.config.__dict__,
+            "metrics": episode_log,
+            "best_reward": self._best_reward,
+        }
+
+    def _save_checkpoint(self, episode: int, episode_log: dict[str, float], is_best: bool) -> None:
+        checkpoint_dir = Path(self.config.checkpoint_dir)
+        payload = self._checkpoint_payload(episode, episode_log)
+
+        episode_path = checkpoint_dir / f"episode_{episode:05d}.pt"
+        latest_path = checkpoint_dir / "latest.pt"
+        latest_agent_path = checkpoint_dir / "latest_agent.pt"
+
+        torch.save(payload, episode_path)
+        torch.save(payload, latest_path)
+        torch.save(self.agent.state_dict(), latest_agent_path)
+
+        if is_best:
+            torch.save(payload, checkpoint_dir / "best.pt")
+            torch.save(self.agent.state_dict(), checkpoint_dir / "best_agent.pt")
 
     def _normalize(self, tensor: torch.Tensor) -> torch.Tensor:
         std = tensor.std(unbiased=False)
@@ -93,7 +108,7 @@ class ReinforceTrainer:
         self._running_return_mean = m * self._running_return_mean + (1.0 - m) * mean
         self._running_return_var = m * self._running_return_var + (1.0 - m) * max(var, self.config.eps)
 
-        denom = (self._running_return_var ** 0.5) + self.config.eps
+        denom = (self._running_return_var**0.5) + self.config.eps
         normalized = (returns - self._running_return_mean) / denom
         return torch.clamp(normalized, -self.config.max_abs_advantage, self.config.max_abs_advantage)
 
@@ -103,11 +118,10 @@ class ReinforceTrainer:
         values: torch.Tensor,
         dones: torch.Tensor,
     ) -> tuple[torch.Tensor, torch.Tensor]:
-        """Compute Generalized Advantage Estimation and lambda-returns."""
         advantages = torch.zeros_like(rewards)
         gae = torch.tensor(0.0, dtype=torch.float32, device=rewards.device)
-
         next_value = torch.tensor(0.0, dtype=torch.float32, device=rewards.device)
+
         for t in reversed(range(rewards.shape[0])):
             not_done = 1.0 - dones[t]
             delta = rewards[t] + self.config.gamma * next_value * not_done - values[t]
@@ -140,16 +154,11 @@ class ReinforceTrainer:
             rewards = torch.tensor(trajectory.rewards, dtype=torch.float32, device=self.device)
             dones = torch.tensor(trajectory.dones, dtype=torch.float32, device=self.device)
 
-            bandit_mode = bool(info.get("bandit_mode", False))
-            if bandit_mode:
-                returns_gae = rewards
-                advantages = returns_gae - old_values
-            else:
-                advantages, returns_gae = self._compute_gae(
-                    rewards=rewards,
-                    values=old_values,
-                    dones=dones,
-                )
+            advantages, returns_gae = self._compute_gae(
+                rewards=rewards,
+                values=old_values,
+                dones=dones,
+            )
 
             psnr_norm = float(info.get("psnr_component", 0.0))
             if self.config.psnr_norm_aux_weight > 0.0:
@@ -162,6 +171,7 @@ class ReinforceTrainer:
             advantages = advantages.detach()
             if self.config.normalize_advantages:
                 advantages = self._normalize_advantages(advantages)
+
             ratio_mean = 1.0
             approx_kl = 0.0
             grad_norm_value = 0.0
@@ -172,10 +182,7 @@ class ReinforceTrainer:
             entropy_bonus = torch.tensor(0.0, device=self.device)
 
             for _ in range(max(1, int(self.config.ppo_update_epochs))):
-                log_probs, entropies, values = self.agent.evaluate_actions(
-                    states=states,
-                    actions=actions,
-                )
+                log_probs, entropies, values = self.agent.evaluate_actions(states=states, actions=actions)
                 values = values.view(-1)
 
                 ratios = torch.exp(log_probs - old_log_probs)
@@ -189,27 +196,23 @@ class ReinforceTrainer:
                 surrogate_2 = clipped_ratios * advantages
                 policy_loss = -torch.min(surrogate_1, surrogate_2).mean()
 
-                values_flat = values.view(-1)
                 values_clipped = old_values + torch.clamp(
-                    values_flat - old_values,
+                    values - old_values,
                     -self.config.ppo_value_clip_eps,
                     self.config.ppo_value_clip_eps,
                 )
                 if self.config.critic_loss_type == "smooth_l1":
-                    value_loss_unclipped = F.smooth_l1_loss(values_flat, targets.view(-1), beta=self.config.huber_beta)
+                    value_loss_unclipped = F.smooth_l1_loss(values, targets.view(-1), beta=self.config.huber_beta)
                     value_loss_clipped = F.smooth_l1_loss(values_clipped, targets.view(-1), beta=self.config.huber_beta)
                 else:
-                    value_loss_unclipped = torch.mean((values_flat - targets.view(-1)) ** 2)
+                    value_loss_unclipped = torch.mean((values - targets.view(-1)) ** 2)
                     value_loss_clipped = torch.mean((values_clipped - targets.view(-1)) ** 2)
                 value_loss = torch.max(value_loss_unclipped, value_loss_clipped)
 
                 entropy_bonus = entropies.mean()
                 loss = policy_loss + self.agent.value_coef * value_loss - self.agent.entropy_coef * entropy_bonus
 
-                if approx_kl > self.config.target_kl:
-                    break
-                
-                if not torch.isfinite(loss):
+                if not torch.isfinite(loss) or approx_kl > self.config.target_kl:
                     break
 
                 self.optimizer.zero_grad(set_to_none=True)
@@ -225,20 +228,19 @@ class ReinforceTrainer:
                 grad_exploded = grad_norm_value > self.config.grad_explosion_threshold
                 self.optimizer.step()
                 ratio_mean = float(ratios.mean().item())
-                
-                if approx_kl > self.config.target_kl:
-                    break
 
             if not torch.isfinite(loss):
                 continue
 
+            episode_reward = float(sum(trajectory.rewards))
             episode_log = {
                 "episode": float(episode),
-                "reward": float(sum(trajectory.rewards)),
+                "reward": episode_reward,
                 "selected_action": float(trajectory.actions[-1]),
                 "selected_solver": float(["DDNM", "DPS", "DiffPIR"].index(info["solver"])),
                 "psnr_norm": float(psnr_norm),
                 "ssim": float(info.get("ssim", 0.0)),
+                "consistency": float(info.get("consistency", 0.0)),
                 "loss_total": float(loss.item()),
                 "loss_policy": float(policy_loss.item()),
                 "loss_value": float(value_loss.item()),
@@ -251,30 +253,31 @@ class ReinforceTrainer:
                 "grad_norm": grad_norm_value,
                 "grad_clipped_to": float(self.config.grad_clip_norm),
                 "grad_exploded": float(grad_exploded),
-                "bandit_mode": float(bandit_mode),
                 "running_return_mean": float(self._running_return_mean),
-                "running_return_std": float((self._running_return_var ** 0.5)),
-
+                "running_return_std": float(self._running_return_var**0.5),
             }
             logs.append(episode_log)
 
-            if episode % 10 == 0 or episode == 1:
+            is_best = episode_reward >= self._best_reward
+            if is_best:
+                self._best_reward = episode_reward
+
+            if episode % 5 == 0 or episode == 1:
                 print(
                     f"[Episode {episode:04d}] "
                     f"reward={episode_log['reward']:.3f} "
                     f"solver={info['solver']} "
                     f"psnr_norm={episode_log['psnr_norm']:.3f} "
                     f"ssim={episode_log['ssim']:.3f} "
-                    f"loss={episode_log['loss_total']:.4f} "
-                    f"grad_norm={episode_log['grad_norm']:.4f}"
+                    f"consistency={episode_log['consistency']:.6f} "
+                    f"loss={episode_log['loss_total']:.4f}"
                 )
 
-            if episode % self.config.checkpoint_every == 0:
-                self._save_checkpoint(episode)
+            if episode % self.config.checkpoint_every == 0 or is_best or episode == self.config.num_episodes:
+                self._save_checkpoint(episode, episode_log, is_best=is_best)
 
         return logs
 
 
-# Backward-compatible aliases so existing imports keep working.
 PPOTrainerConfig = ReinforceTrainerConfig
 PPOTrainer = ReinforceTrainer

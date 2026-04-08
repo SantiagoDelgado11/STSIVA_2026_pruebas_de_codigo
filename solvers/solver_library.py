@@ -1,17 +1,13 @@
 from __future__ import annotations
+
 from dataclasses import dataclass
-from typing import Any
+
+from solvers.base_diffusion_solver import DiffusionStepResult
 
 
 @dataclass
 class SolverLibrary:
-    """Container that maps discrete actions to solver wrappers.
-
-    Action space:
-    0 -> DDNM
-    1 -> DPS
-    2 -> DiffPIR
-    """
+    """Discrete solver action space for timestep-level control."""
 
     diffpir_solver: object
     dps_solver: object
@@ -24,64 +20,36 @@ class SolverLibrary:
             2: self.diffpir_solver,
         }
         for action, solver in self._action_to_solver.items():
-            if not callable(getattr(solver, "solve", None)):
+            if not callable(getattr(solver, "step", None)):
                 raise TypeError(
                     f"Solver mapped to action {action} ({type(solver).__name__}) "
-                    "must implement a callable `solve` method."
+                    "must implement a callable `step` method."
                 )
-
 
     def _validate_action(self, action: int) -> None:
         if action not in self._action_to_solver:
             raise ValueError(f"Invalid action {action}. Expected one of {list(self._action_to_solver)}")
 
-    def _solve(self, action: int, x_k: Any, y, Phi, ground_truth = None):
-        solver = self.get_solver(action)
-        return solver.solve(x_k=x_k, y=y, H=Phi, ground_truth=ground_truth)
- 
-
-    def ddnm_step(self, x_k: Any, y, Phi):
-        return self._solve(action=0, x_k=x_k, y=y, Phi=Phi)
-
-
-    def dps_step(self, x_k: Any, y, Phi):
-        return self._solve(action=1, x_k=x_k, y=y, Phi=Phi)
-       
-
-    def diffpir_step(self, x_k: Any, y, Phi):
-        return self._solve(action=2, x_k=x_k, y=y, Phi=Phi)
-
-    def apply_action(self, action: int, x_k, y, Phi, ground_truth = None):
-        """Route an action to the corresponding diffusion reconstruction step."""
+    def apply_solver_step(
+        self,
+        action: int,
+        x_t,
+        timestep: int,
+        y,
+        Phi,
+    ) -> DiffusionStepResult:
         self._validate_action(action)
-        return self._solve(action=action, x_k=x_k, y=y, Phi=Phi, ground_truth=ground_truth) 
+        solver = self._action_to_solver[action]
+        return solver.step(x_t=x_t, timestep=timestep, y=y, H=Phi)
 
-    def apply_solver_step(self, action: int, x_k, y, Phi, ground_truth=None):
-        """Alias used by the environment for one iterative transition step."""
-        return self.apply_action(action=action, x_k=x_k, y=y, Phi=Phi, ground_truth=ground_truth)
+    def get_solver(self, action: int):
+        self._validate_action(action)
+        return self._action_to_solver[action]
 
     @property
     def action_dim(self) -> int:
-        """Number of available discrete actions."""
         return len(self._action_to_solver)
-    
-    @property
-    def supports_continuation(self) -> bool:
-        """True only if every solver can continue from x_k instead of restarting from noise."""
-        return all(bool(getattr(solver, "supports_continuation", False)) for solver in self._action_to_solver.values())
 
     @property
-    def supports_continual_actions(self) -> bool:
-        """Backward-compatible alias used by parts of the environment code."""
-        return self.supports_continuation
-
-    @property
-    def is_contextual_bandit(self) -> bool:
-        """When continuation is not supported, the interaction is contextual bandit (single-step)."""
-        return not self.supports_continuation
-
-
-    def get_solver(self, action: int):
-        """Return solver associated with action index."""
-        self._validate_action(action)
-        return self._action_to_solver[action]
+    def solver_names(self) -> list[str]:
+        return [self._action_to_solver[idx].name for idx in range(self.action_dim)]

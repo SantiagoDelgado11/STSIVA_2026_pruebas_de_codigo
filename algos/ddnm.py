@@ -1,6 +1,10 @@
 import torch
 from tqdm import tqdm
 from utils.ddpm import get_named_beta_schedule
+from utils.torchvision_compat import patch_torchvision_fake_registration
+
+patch_torchvision_fake_registration()
+
 from torchmetrics.image import (
     StructuralSimilarityIndexMeasure,
     PeakSignalNoiseRatio,

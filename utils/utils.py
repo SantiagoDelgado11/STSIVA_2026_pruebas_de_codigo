@@ -10,6 +10,10 @@ import random
 import glob
 import os
 import torch
+from utils.torchvision_compat import patch_torchvision_fake_registration
+
+patch_torchvision_fake_registration()
+
 import torchvision
 from PIL import Image
 from matplotlib import pyplot as plt

@@ -1,5 +1,4 @@
 import numpy as np
-import matplotlib.pyplot as plt
 
 # --- Funciones Base de Hadamard (antes en utils.py) ---
 
