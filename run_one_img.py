@@ -158,7 +158,8 @@ def main(opt):
     SSIM = StructuralSimilarityIndexMeasure(data_range=1.0).to(device)
     PSNR = PeakSignalNoiseRatio(data_range=1.0).to(device)
 
-    reconstruction = (reconstruction + 1) / 2
+    reconstruction_model_domain = reconstruction.detach()
+    reconstruction = (reconstruction_model_domain + 1) / 2
     GT = (GT + 1) / 2
     x_estimate_vis = ((x_estimate + 1) / 2).clamp(0, 1)
 
@@ -169,7 +170,7 @@ def main(opt):
 
     ssim_pred = SSIM(reconstruction, GT)
     psnr_pred = PSNR(reconstruction, GT)
-    consistency = torch.linalg.norm(inverse_model.forward_pass(reconstruction * 2 - 1) - y).item()
+    consistency = torch.linalg.norm(inverse_model.forward_pass(reconstruction_model_domain) - y).item()
     error = torch.linalg.norm(reconstruction - GT).item()
 
     fig, ax = plt.subplots(1, 4, figsize=(25, 5))
@@ -262,7 +263,7 @@ if __name__ == "__main__":
     p.add_argument(
         "--algo",
         type=str,
-        default="DiffPIR",
+        default=DEFAULT_PPO_ALGO,
         choices=["DPS", "DDNM", "DiffPIR", DEFAULT_PPO_ALGO],
     )
     p.add_argument("--diffusion_steps", type=int, default=DEFAULT_DIFFUSION_STEPS)

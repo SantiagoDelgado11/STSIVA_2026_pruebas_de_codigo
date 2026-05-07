@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, List, Tuple
+from typing import Callable
 
 import torch
 from tqdm import tqdm
@@ -70,10 +70,10 @@ class DiffPIR:
         self.beta_end = beta_end
         self.schedule_name = schedule_name
         self.skip_type = skip_type
-        self.iter_num = iter_num
-        self.skip = self.noise_steps // self.iter_num
-        self.eta = eta
-        self.zeta = zeta
+        self.iter_num = min(max(1, int(iter_num)), self.noise_steps)
+        self.skip = max(1, self.noise_steps // self.iter_num)
+        self.eta = float(eta)
+        self.zeta = float(zeta)
         # ---- diffusion schedule ----
         self.beta = self._prepare_noise_schedule().to(self.device)
         self.alpha = 1.0 - self.beta
@@ -81,9 +81,9 @@ class DiffPIR:
         self.alpha_hat_prev = torch.cat([torch.ones(1, device=self.device), self.alpha_hat[:-1]])
 
         # ---- official ρ_t schedule ----
-        self.noise_level_img = noise_level_img
-        self.sigma = max(0.001, noise_level_img)
-        self.lambda_ = lambda_
+        self.noise_level_img = 0.0 if noise_level_img is None else float(noise_level_img)
+        self.sigma = max(0.001, self.noise_level_img)
+        self.lambda_ = float(lambda_)
 
         # ---- pre‑compute coeffs ----
         self.sqrt_recip_alphas_cumprod = torch.sqrt(1.0 / self.alpha_hat)
@@ -130,7 +130,7 @@ class DiffPIR:
         out = self.p_mean_variance(model, x, t)
         sample = out["mean"]
         noise = torch.randn_like(x)
-        if t != 0:  # no noise when t == 0
+        if torch.any(t != 0):  # no noise when t == 0
             sample += torch.exp(0.5 * out["log_variance"]) * noise
 
         return {"sample": sample, "pred_xstart": out["pred_xstart"]}
@@ -150,7 +150,7 @@ class DiffPIR:
         assert noise.shape == x_start.shape
 
         coef1 = self.extract_and_expand(self.sqrt_alphas_cumprod, t, x_start)
-        coef2 = self.extract_and_expand(self.sqrt_one_minus_alphas_cumprod, t, x_start)
+        coef2 = self.extract_and_expand(self.sqrt_1m_alphas_cumprod, t, x_start)
 
         return coef1 * x_start + coef2 * noise
 
@@ -219,7 +219,7 @@ class DiffPIR:
     def find_nearest(self, array, value):
         array = np.asarray(array.cpu())
         idx = (np.abs(array - value)).argmin()
-        return idx
+        return int(idx)
 
     def sample(
         self,
@@ -227,7 +227,7 @@ class DiffPIR:
         y: torch.Tensor,
         forward_pass: Callable[[torch.Tensor], torch.Tensor],
         transpose_pass: Callable[[torch.Tensor], torch.Tensor],
-    ) -> Tuple[torch.Tensor, List[float] | None]:
+    ) -> torch.Tensor:
 
         y = y + torch.randn_like(y) * self.noise_level_img * 2
 
@@ -238,85 +238,80 @@ class DiffPIR:
 
         ############################
 
-        sigmas = []
-        sigma_ks = []
-        rhos = []
-        for i in range(self.noise_steps):
-            sigmas.append(self.reduced_alpha_cumprod[self.noise_steps - 1 - i])
-            sigma_ks.append((self.sqrt_1m_alphas_cumprod[i] / self.sqrt_alphas_cumprod[i]))
-            rhos.append(self.lambda_ * (self.sigma**2) / (sigma_ks[i] ** 2))
-
-        rhos, sigmas, sigma_ks = (
-            torch.tensor(rhos).to(self.device),
-            torch.tensor(sigmas).to(self.device),
-            torch.tensor(sigma_ks).to(self.device),
-        )
+        sigmas = torch.flip(self.reduced_alpha_cumprod, dims=[0])
+        sigma_ks = self.sqrt_1m_alphas_cumprod / torch.clamp(self.sqrt_alphas_cumprod, min=1e-8)
+        rhos = self.lambda_ * (self.sigma**2) / torch.clamp(sigma_ks.square(), min=1e-8)
 
         model.eval()
 
         if self.skip_type == "uniform":
-            seq = [i * self.skip for i in range(self.iter_num)]
-            if self.skip > 1:
-                seq.append(self.noise_steps - 1)
+            seq = np.linspace(0, self.noise_steps - 1, self.iter_num)
+            seq = [int(s) for s in seq]
         elif self.skip_type == "quad":
-            seq = np.sqrt(np.linspace(0, self.noise_steps**2, self.iter_num))
+            seq = np.sqrt(np.linspace(0, (self.noise_steps - 1) ** 2, self.iter_num))
             seq = [int(s) for s in list(seq)]
-            seq[-1] = seq[-1] - 1
-        progress_seq = seq[:: (len(seq) // 10)]
-        progress_seq.append(seq[-1])
+        else:
+            raise ValueError(f"Unknown skip_type: {self.skip_type}")
+
+        seq = sorted(set(seq))
+        if seq[-1] != self.noise_steps - 1:
+            seq.append(self.noise_steps - 1)
 
         pbar = tqdm(range(len(seq)))
         for i in pbar:
-            curr_sigma = sigmas[seq[i]].cpu().numpy()
+            curr_sigma = sigmas[seq[i]].item()
             t_i = self.find_nearest(self.reduced_alpha_cumprod, curr_sigma)
             if t_i > self.t_start:
                 continue
 
-            t_step = self.find_nearest(self.reduced_alpha_cumprod, (curr_sigma))
-            vec_t = torch.tensor([t_step] * x.shape[0], device=x.device)
+            vec_t = torch.tensor([t_i] * x.shape[0], device=x.device)
 
             # ---- prior ----
-            model_out = self.p_sample(x, vec_t, model)
+            with torch.no_grad():
+                model_out = self.p_sample(x, vec_t, model)
             z = model_out["pred_xstart"].detach()
 
             # ---- data fidelity ----
-            rho_t = rhos[i]
+            rho_t = rhos[t_i]
             b = transpose_pass(y) + rho_t * z
 
             def A_fn(v):
                 return transpose_pass(forward_pass(v)) + rho_t * v
 
-            if not (seq[i] == seq[-1]):
-                if i < self.noise_steps:
-                    x0 = conjugate_gradient(A_fn, b, x0=z, n_iter=self.cg_iters).detach()
-                else:
-                    x0 = self.p_sample(x, vec_t, model)["sample"].detach()
+            x0 = conjugate_gradient(A_fn, b, x0=z, n_iter=self.cg_iters).detach()
 
             ################################
-            if not (seq[i] == seq[-1]):
-                t_im1 = self.find_nearest(
-                    self.reduced_alpha_cumprod, sigmas[seq[i + 1]].cpu().numpy()
+            if seq[i] == seq[-1]:
+                x = x0
+            else:
+                t_im1 = self.find_nearest(self.reduced_alpha_cumprod, sigmas[seq[i + 1]].item())
+                eps = (x - self.sqrt_alphas_cumprod[t_i] * x0) / torch.clamp(
+                    self.sqrt_1m_alphas_cumprod[t_i],
+                    min=1e-8,
                 )
-                eps = (x - self.sqrt_alphas_cumprod[t_i] * x0) / self.sqrt_1m_alphas_cumprod[t_i]
                 eta_sigma = (
                     self.eta
                     * self.sqrt_1m_alphas_cumprod[t_im1]
-                    / self.sqrt_1m_alphas_cumprod[t_i]
+                    / torch.clamp(self.sqrt_1m_alphas_cumprod[t_i], min=1e-8)
                     * torch.sqrt(self.beta[t_i])
+                )
+                residual_sigma = torch.sqrt(
+                    torch.clamp(self.sqrt_1m_alphas_cumprod[t_im1] ** 2 - eta_sigma**2, min=0.0)
                 )
                 x = (
                     self.sqrt_alphas_cumprod[t_im1] * x0
-                    + np.sqrt(1 - self.zeta)
-                    * (
-                        torch.sqrt(self.sqrt_1m_alphas_cumprod[t_im1] ** 2 - eta_sigma**2) * eps
-                        + eta_sigma * torch.randn_like(x)
-                    )
-                    + np.sqrt(self.zeta) * self.sqrt_1m_alphas_cumprod[t_im1] * torch.randn_like(x)
+                    + max(0.0, 1.0 - self.zeta) ** 0.5
+                    * (residual_sigma * eps + eta_sigma * torch.randn_like(x))
+                    + max(0.0, self.zeta) ** 0.5
+                    * self.sqrt_1m_alphas_cumprod[t_im1]
+                    * torch.randn_like(x)
                 )
             ############ METRICS ############
-            difference = y - forward_pass(x)
+            difference = y - forward_pass(x0)
             norm = torch.linalg.norm(difference)
-            pbar.set_description(f"Sampling - Step {i} - Distance: {norm.item():.4f}")
+            pbar.set_description(
+                f"Sampling - Step {i} - t: {t_i} - rho: {rho_t.item():.2e} - Distance: {norm.item():.4f}"
+            )
             ############ METRICS ############
 
         return x

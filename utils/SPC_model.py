@@ -3,7 +3,6 @@ import torch
 import torch.nn as nn
 
 from utils.hadamard import hadamard_matrix
-import numpy as np
 
 
 def forward_spc(x: torch.Tensor, H: torch.Tensor) -> torch.Tensor:
@@ -73,8 +72,8 @@ class SPCModel(nn.Module):
         self.m = int(self.n * compression_ratio)
 
         H = hadamard_matrix(self.n)
-        H = H[: self.m, :]
-        self.H = torch.tensor(H).float()
+        H = H[: self.m, :] / np.sqrt(self.n)
+        self.register_buffer("H", torch.tensor(H, dtype=torch.float32))
 
     def forward_pass(self, x: torch.Tensor) -> torch.Tensor:
         return forward_spc(x, self.H.to(x.device))
